@@ -1,0 +1,18 @@
+# VS Code
+.vscode/
+
+# Build output
+Listings/
+Objects/
+
+# ARM/Keil project files (except the project file itself)
+*.uvguix.*
+*.uvoptx
+*.build_log.htm
+*.htm
+*.lnp
+*.sct
+
+# JLink files
+JLinkLog.txt
+JLinkSettings.ini
