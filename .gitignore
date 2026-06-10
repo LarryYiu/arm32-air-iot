@@ -16,3 +16,4 @@ Objects/
 # JLink files
 JLinkLog.txt
 JLinkSettings.ini
+*.scvd

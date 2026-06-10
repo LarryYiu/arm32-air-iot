@@ -7,23 +7,23 @@
 
   <Targets>
     <Target>
-      <TargetName>ARM32</TargetName>
+      <TargetName>ARM</TargetName>
       <ToolsetNumber>0x4</ToolsetNumber>
       <ToolsetName>ARM-ADS</ToolsetName>
       <pCCUsed>5060960::V5.06 update 7 (build 960)::.\ARM_Compiler_5.06u7</pCCUsed>
       <uAC6>0</uAC6>
       <TargetOption>
         <TargetCommonOption>
-          <Device>GD32F303ZE</Device>
+          <Device>GD32F303RE</Device>
           <Vendor>GigaDevice</Vendor>
           <PackID>GigaDevice.GD32F30x_DFP.2.5.0</PackID>
           <PackURL>https://gd32mcu.com/data/documents/pack/</PackURL>
           <Cpu>IRAM(0x20000000,0x010000) IROM(0x08000000,0x080000) CPUTYPE("Cortex-M4") FPU2 CLOCK(12000000) ELITTLE</Cpu>
           <FlashUtilSpec></FlashUtilSpec>
           <StartupFile></StartupFile>
-          <FlashDriverDll>UL2CM3(-S0 -C0 -P0 -FD20000000 -FC1000 -FN1 -FF0GD32F30x_HD -FS08000000 -FL080000 -FP0($$Device:GD32F303ZE$Flash\GD32F30x_HD.FLM))</FlashDriverDll>
+          <FlashDriverDll>UL2CM3(-S0 -C0 -P0 -FD20000000 -FC1000 -FN1 -FF0GD32F30x_HD -FS08000000 -FL080000 -FP0($$Device:GD32F303RE$Flash\GD32F30x_HD.FLM))</FlashDriverDll>
           <DeviceId>0</DeviceId>
-          <RegisterFile>$$Device:GD32F303ZE$Device\Include\gd32f30x.h</RegisterFile>
+          <RegisterFile>$$Device:GD32F303RE$Device\Include\gd32f30x.h</RegisterFile>
           <MemoryEnv></MemoryEnv>
           <Cmp></Cmp>
           <Asm></Asm>
@@ -33,7 +33,7 @@
           <SLE66CMisc></SLE66CMisc>
           <SLE66AMisc></SLE66AMisc>
           <SLE66LinkerMisc></SLE66LinkerMisc>
-          <SFDFile>$$Device:GD32F303ZE$SVD\GD32F30x_HD.svd</SFDFile>
+          <SFDFile>$$Device:GD32F303RE$SVD\GD32F30x_HD.svd</SFDFile>
           <bCustSvd>0</bCustSvd>
           <UseEnv>0</UseEnv>
           <BinPath></BinPath>
@@ -49,10 +49,10 @@
             <InvalidFlash>1</InvalidFlash>
           </TargetStatus>
           <OutputDirectory>.\Objects\</OutputDirectory>
-          <OutputName>arm32-air-iot</OutputName>
+          <OutputName>ARM</OutputName>
           <CreateExecutable>1</CreateExecutable>
           <CreateLib>0</CreateLib>
-          <CreateHexFile>0</CreateHexFile>
+          <CreateHexFile>1</CreateHexFile>
           <DebugInformation>1</DebugInformation>
           <BrowseInformation>1</BrowseInformation>
           <ListingPath>.\Listings\</ListingPath>
@@ -80,10 +80,10 @@
             <nStopB2X>0</nStopB2X>
           </BeforeMake>
           <AfterMake>
-            <RunUserProg1>0</RunUserProg1>
-            <RunUserProg2>0</RunUserProg2>
-            <UserProg1Name></UserProg1Name>
-            <UserProg2Name></UserProg2Name>
+            <RunUserProg1>1</RunUserProg1>
+            <RunUserProg2>1</RunUserProg2>
+            <UserProg1Name>fromelf --text -a -c --output .\Objects\ARM.dis .\Objects\ARM.axf</UserProg1Name>
+            <UserProg2Name>fromelf --bin -a -c --output .\Objects\ARM.bin .\Objects\ARM.axf</UserProg2Name>
             <UserProg1Dos16Mode>0</UserProg1Dos16Mode>
             <UserProg2Dos16Mode>0</UserProg2Dos16Mode>
             <nStopA1X>0</nStopA1X>
@@ -138,7 +138,7 @@
           </Flash1>
           <bUseTDR>1</bUseTDR>
           <Flash2>BIN\UL2CM3.DLL</Flash2>
-          <Flash3>"" ()</Flash3>
+          <Flash3></Flash3>
           <Flash4></Flash4>
           <pFcarmOut></pFcarmOut>
           <pFcarmGrp></pFcarmGrp>
@@ -327,7 +327,7 @@
             <uThumb>0</uThumb>
             <uSurpInc>0</uSurpInc>
             <uC99>1</uC99>
-            <uGnu>1</uGnu>
+            <uGnu>0</uGnu>
             <useXO>0</useXO>
             <v6Lang>3</v6Lang>
             <v6LangP>3</v6LangP>
@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define></Define>
               <Undefine></Undefine>
-              <IncludePath>.\App;.\Arm_kernel;.\Driver;.\GD32_lib;.\GD32_lib\Include</IncludePath>
+              <IncludePath>.\App;.\Arm_kernel;.\Gd32_Lib;.\Gd32_Lib\Include;.\Driver;.\Rtt_Segger</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -353,12 +353,12 @@
             <NoWarn>0</NoWarn>
             <uSurpInc>0</uSurpInc>
             <useXO>0</useXO>
-            <ClangAsOpt>1</ClangAsOpt>
+            <ClangAsOpt>4</ClangAsOpt>
             <VariousControls>
               <MiscControls></MiscControls>
               <Define></Define>
               <Undefine></Undefine>
-              <IncludePath>.\App;.\Arm_kernel;.\Driver;.\GD32_lib</IncludePath>
+              <IncludePath></IncludePath>
             </VariousControls>
           </Aads>
           <LDads>
@@ -393,22 +393,76 @@
         </Group>
         <Group>
           <GroupName>Driver</GroupName>
-        </Group>
-        <Group>
-          <GroupName>GD32_lib</GroupName>
+          <Files>
+            <File>
+              <FileName>systick.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Driver\systick.c</FilePath>
+            </File>
+            <File>
+              <FileName>gpio_decoder.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Driver\gpio_decoder.c</FilePath>
+            </File>
+            <File>
+              <FileName>dwt_delay.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Driver\dwt_delay.c</FilePath>
+            </File>
+            <File>
+              <FileName>key_driver.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Driver\key_driver.c</FilePath>
+            </File>
+            <File>
+              <FileName>led_driver.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Driver\led_driver.c</FilePath>
+            </File>
+          </Files>
         </Group>
         <Group>
           <GroupName>Arm_kernel</GroupName>
           <Files>
             <File>
+              <FileName>startup_gd32f30x_hd.s</FileName>
+              <FileType>2</FileType>
+              <FilePath>.\Arm_kernel\startup_gd32f30x_hd.s</FilePath>
+            </File>
+            <File>
               <FileName>system_gd32f30x.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Arm_kernel\system_gd32f30x.c</FilePath>
             </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Gd32_Lib</GroupName>
+          <Files>
             <File>
-              <FileName>startup_gd32f30x_hd.s</FileName>
-              <FileType>2</FileType>
-              <FilePath>.\Arm_kernel\startup_gd32f30x_hd.s</FilePath>
+              <FileName>gd32f30x_gpio.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Gd32_Lib\Source\gd32f30x_gpio.c</FilePath>
+            </File>
+            <File>
+              <FileName>gd32f30x_rcu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Gd32_Lib\Source\gd32f30x_rcu.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Rtt_Segger</GroupName>
+          <Files>
+            <File>
+              <FileName>SEGGER_RTT.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Rtt_Segger\SEGGER_RTT.c</FilePath>
+            </File>
+            <File>
+              <FileName>SEGGER_RTT_printf.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Rtt_Segger\SEGGER_RTT_printf.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -425,7 +479,8 @@
   <LayerInfo>
     <Layers>
       <Layer>
-        <LayName>arm32-air-iot</LayName>
+        <LayName>ARM</LayName>
+        <LayTarg>0</LayTarg>
         <LayPrjMark>1</LayPrjMark>
       </Layer>
     </Layers>
