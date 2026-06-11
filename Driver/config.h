@@ -30,16 +30,16 @@
 
 /*KEY CONFIGURATION END*/
 
-/* SH20T CONFIGURATION START*/
-#define SH20T_SCL_PIN GPIO_PIN(A,5)
-#define SH20T_SDA_PIN GPIO_PIN(A,4)
-#define SH20T_ADDRESS 0x80
-#define SH20T_ERROR_TIMEOUT_MS 5000
+/* SHT20 CONFIGURATION START*/
+#define SHT20_SCL_PIN GPIO_PIN(A,5)
+#define SHT20_SDA_PIN GPIO_PIN(A,4)
+#define SHT20_ADDRESS 0x80
+#define SHT20_ERROR_TIMEOUT_MS 5000
 // clang-format on
 #define len(arr) (sizeof(arr) / sizeof((arr)[0]))
 #endif // __CONFIG_H__
 
-// void SH20T_Run(void)
+// void SHT20_Run(void)
 // {
 //     static uint8_t msb, lsb, crc;
 //     switch(__state)
@@ -49,21 +49,21 @@
 //         case __STATE_CMD:
 //             __SCL_High();
 //             __Start();
-//             if(!__SH20T_WriteByte(__CMD_START_WRITE))
+//             if(!__SHT20_WriteByte(__CMD_START_WRITE))
 //             {
-//                 DBG_log("[SH20T Error] Write cmd START.\n");
+//                 DBG_log("[SHT20 Error] Write cmd START.\n");
 //                 __isMeasuringTemp = !__isMeasuringTemp;
 //             }
-//             if(!__SH20T_WriteByte(__isMeasuringTemp ? __CMD_MEASURE_TEMPERATURE_HOLD : __CMD_MEASURE_HUMIDITY_HOLD))
+//             if(!__SHT20_WriteByte(__isMeasuringTemp ? __CMD_MEASURE_TEMPERATURE_HOLD : __CMD_MEASURE_HUMIDITY_HOLD))
 //             {
-//                 DBG_log("[SH20T Error] Write cmd READ.\n");
+//                 DBG_log("[SHT20 Error] Write cmd READ.\n");
 //                 __isMeasuringTemp = !__isMeasuringTemp;
 //             }
 //             DWT_Delay_us(20);
 //             __Start();
-//             if(!__SH20T_WriteByte(__CMD_START_READ))
+//             if(!__SHT20_WriteByte(__CMD_START_READ))
 //             {
-//                 DBG_log("[SH20T Error] Write cmd START READ.\n");
+//                 DBG_log("[SHT20 Error] Write cmd START READ.\n");
 //                 __isMeasuringTemp = !__isMeasuringTemp;
 //             }
 //             __state = __STATE_WAIT;
@@ -74,10 +74,10 @@
 //             break;
 //         case __STATE_READ:
 //             __Start();
-//             __SH20T_WriteByte(__CMD_START_READ);
-//             msb     = __SH20T_ReadByte(false);
-//             lsb     = __SH20T_ReadByte(false);
-//             crc     = __SH20T_ReadByte(true);
+//             __SHT20_WriteByte(__CMD_START_READ);
+//             msb     = __SHT20_ReadByte(false);
+//             lsb     = __SHT20_ReadByte(false);
+//             crc     = __SHT20_ReadByte(true);
 //             __state = __STATE_CRC;
 //             break;
 //         case __STATE_CRC:
@@ -87,7 +87,7 @@
 //             }
 //             else
 //             {
-//                 DBG_log("[SH20T Error] CRC check failed.\n");
+//                 DBG_log("[SHT20 Error] CRC check failed.\n");
 //                 __isMeasuringTemp = !__isMeasuringTemp;
 //                 __state           = __STATE_CMD;
 //             }
@@ -115,7 +115,7 @@
 //     }
 // }
 
-// float SH20T_GetTemp(bool handleError)
+// float SHT20_GetTemp(bool handleError)
 // {
 //     if(!handleError)
 //     {
@@ -123,9 +123,9 @@
 //     }
 //     else
 //     {
-//         if(SYSTICK_GetSysRunTime() - __lastTempUpdatedAt > SH20T_ERROR_TIMEOUT_MS)
+//         if(SYSTICK_GetSysRunTime() - __lastTempUpdatedAt > SHT20_ERROR_TIMEOUT_MS)
 //         {
-//             DBG_log("[SH20T Error] Temperature reading timeout.\n");
+//             DBG_log("[SHT20 Error] Temperature reading timeout.\n");
 //             return NAN;
 //         }
 //         else if(!__tempUpdated)
@@ -140,7 +140,7 @@
 //     }
 // }
 
-// float SH20T_GetHumidity(bool handleError)
+// float SHT20_GetHumidity(bool handleError)
 // {
 //     if(!handleError)
 //     {
@@ -148,9 +148,9 @@
 //     }
 //     else
 //     {
-//         if(SYSTICK_GetSysRunTime() - __lastHumidityUpdatedAt > SH20T_ERROR_TIMEOUT_MS)
+//         if(SYSTICK_GetSysRunTime() - __lastHumidityUpdatedAt > SHT20_ERROR_TIMEOUT_MS)
 //         {
-//             DBG_log("[SH20T Error] Humidity reading timeout.\n");
+//             DBG_log("[SHT20 Error] Humidity reading timeout.\n");
 //             return NAN;
 //         }
 //         else if(!__humidityUpdated)

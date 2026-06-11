@@ -172,12 +172,12 @@ bool __CRC_Check(uint8_t MSB, uint8_t LSB, uint8_t checksum)
         return true;
 }
 
-static inline float __InterpretTemp(uint8_t msb, uint8_t lsb)
+static __forceinline float __InterpretTemp(uint8_t msb, uint8_t lsb)
 {
     return ((float)((((uint16_t)msb << 8) | lsb) & 0xFFFC) * 175.72f / 65536.0f) - 46.85f;
 }
 
-static inline float __InterpretHumidity(uint8_t msb, uint8_t lsb)
+static __forceinline float __InterpretHumidity(uint8_t msb, uint8_t lsb)
 {
     return ((float)((((uint16_t)msb << 8) | lsb) & 0xFFFC) * 125.0f / 65536.0f) - 6.0f;
 }
