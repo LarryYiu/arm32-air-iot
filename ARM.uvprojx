@@ -420,9 +420,9 @@
               <FilePath>.\Driver\led_driver.c</FilePath>
             </File>
             <File>
-              <FileName>sh20t_driver.c</FileName>
+              <FileName>sht20_driver.c</FileName>
               <FileType>1</FileType>
-              <FilePath>.\Driver\sh20t_driver.c</FilePath>
+              <FilePath>.\Driver\sht20_driver.c</FilePath>
             </File>
           </Files>
         </Group>
