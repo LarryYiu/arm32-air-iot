@@ -5,6 +5,7 @@
 #include "systick.h"
 #include "sht20_driver.h"
 #include "RTT_Debug.h"
+#include "hk_a5_driver.h"
 
 void ShortPressListener(void)
 {
@@ -21,7 +22,6 @@ void ShortPressListener(void)
         uint32_t humidity = (uint32_t)(_humidity * 100.0f);
         DBG_log("[SHT20] Humidity: %d.%02d %%\n", humidity / 100, humidity % 100);
     }
-    // SHT20_test();
 }
 
 int main()
@@ -30,13 +30,17 @@ int main()
     DWT_Init();
     KEY_Config();
     SHT20_Init();
+    HK_A5_Init();
     SYSTICK_Config();
 
     KEY_AddShortPressListener(0, ShortPressListener);
 
+    HK_A5_Enable();
+    DBG_log("RTT running...\n");
     while(1)
     {
-        KEY_Scan(0);
-        SHT20_Run();
+        // KEY_Scan(0);
+        // SHT20_Run();
+        HK_A5_Test();
     }
 }

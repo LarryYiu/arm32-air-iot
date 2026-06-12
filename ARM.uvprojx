@@ -424,6 +424,16 @@
               <FileType>1</FileType>
               <FilePath>.\Driver\sht20_driver.c</FilePath>
             </File>
+            <File>
+              <FileName>hk_a5_driver.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Driver\hk_a5_driver.c</FilePath>
+            </File>
+            <File>
+              <FileName>uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Driver\uart.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -453,6 +463,21 @@
               <FileName>gd32f30x_rcu.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Gd32_Lib\Source\gd32f30x_rcu.c</FilePath>
+            </File>
+            <File>
+              <FileName>gd32f30x_dma.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Gd32_Lib\Source\gd32f30x_dma.c</FilePath>
+            </File>
+            <File>
+              <FileName>gd32f30x_usart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Gd32_Lib\Source\gd32f30x_usart.c</FilePath>
+            </File>
+            <File>
+              <FileName>gd32f30x_misc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Gd32_Lib\Source\gd32f30x_misc.c</FilePath>
             </File>
           </Files>
         </Group>

@@ -4,21 +4,18 @@
 #include "gd32f30x.h"
 // clang-format off
 
-/*LED CONFIGURATION START*/
-
 #ifndef NULL
 #define NULL ((void*)0)
 #endif
 
+/*LED CONFIGURATION START*/
 #define LED_GPIO_LOOKUP \
     GPIO_PIN(A,1)
 
 #define LED_GPIO_FREQENCY GPIO_OSPEED_50MHZ
-
 /*LED CONFIGURATION END*/
 
 /*KEY CONFIGURATION START*/
-
 #define KEY_LOOK_UP \
     GPIO_PIN(C,4) \
 
@@ -27,7 +24,6 @@
 #define KEY_LONG_PRESS_THRESHOLD_MS 1000
 #define KEY_CONTINUOUS_PRESS_THRESHOLD_MS 200
 #define KEY_DEBOUNCE_TIME_MS 10
-
 /*KEY CONFIGURATION END*/
 
 /* SHT20 CONFIGURATION START*/
@@ -35,6 +31,13 @@
 #define SHT20_SDA_PIN GPIO_PIN(A,4)
 #define SHT20_ADDRESS 0x80
 #define SHT20_ERROR_TIMEOUT_MS 5000
+/* SHT20 CONFIGURATION END*/
+
+/* HK-A5 CONFIGURATION START*/
+#define HK_A5_UART_BAUDRATE 9600
+#define HK_A5_UART_BUFFER_SIZE 32
+/* HK-A5 CONFIGURATION END */
+
 // clang-format on
 #define len(arr) (sizeof(arr) / sizeof((arr)[0]))
 #endif // __CONFIG_H__
