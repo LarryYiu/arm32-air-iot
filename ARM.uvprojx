@@ -434,6 +434,11 @@
               <FileType>1</FileType>
               <FilePath>.\Driver\uart.c</FilePath>
             </File>
+            <File>
+              <FileName>battery_lvl.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Driver\battery_lvl.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -478,6 +483,11 @@
               <FileName>gd32f30x_misc.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Gd32_Lib\Source\gd32f30x_misc.c</FilePath>
+            </File>
+            <File>
+              <FileName>gd32f30x_adc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Gd32_Lib\Source\gd32f30x_adc.c</FilePath>
             </File>
           </Files>
         </Group>

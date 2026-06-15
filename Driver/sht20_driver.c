@@ -56,7 +56,7 @@ static uint64_t __lastHumidityUpdatedAt = 0;
 static bool __tempUpdated     = false;
 static bool __humidityUpdated = false;
 
-void __GPIO_Config()
+void __SHT20_GPIO_Config()
 {
     /* SCL pin, 0.4 MHz at max */
     rcu_periph_clock_enable(GPIO_GetRcuPeriph(SHT20_SCL_PIN));
@@ -69,7 +69,7 @@ void __GPIO_Config()
 
 void SHT20_Init(void)
 {
-    __GPIO_Config();
+    __SHT20_GPIO_Config();
     __lastTemp     = NAN;
     __lastHumidity = NAN;
 }
