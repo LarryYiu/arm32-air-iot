@@ -16,4 +16,6 @@ void UART_Disable(void);
 bool UART_IsDataReady(void);
 const uint8_t* UART_GetDataBuffer(void);
 
+void UART_GetDataSnapshot(uint8_t* buffer);
+
 #endif // __UART_H__

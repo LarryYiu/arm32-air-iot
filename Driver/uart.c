@@ -1,4 +1,5 @@
 #include "uart.h"
+#include <string.h>
 #include "RTT_Debug.h"
 
 #define USART0_DATA_ADDR (USART0 + 0x04U)
@@ -97,6 +98,12 @@ const uint8_t* UART_GetDataBuffer(void)
 {
     __isPacketReady = false;
     return __dataBuffer;
+}
+
+void UART_GetDataSnapshot(uint8_t* buffer)
+{
+    __isPacketReady = false;
+    memcpy(buffer, __dataBuffer, HK_A5_UART_BUFFER_SIZE);
 }
 
 // int fputc(int ch, FILE* f)
