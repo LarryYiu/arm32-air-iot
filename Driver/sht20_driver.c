@@ -132,14 +132,19 @@ void __forceinline __SendAck(bool isAck)
 
 bool __forceinline __RecvAck()
 {
+    uint8_t timeout = 0;
     __SDA_High(); // Release SDA for ACK
-    DWT_Delay_us(10);
+    DWT_Delay_us(4);
     __SCL_High();
-    DWT_Delay_us(20);
-    bool ack = !gpio_input_bit_get(__SDA_PORT, __SDA_PIN);
+    while(gpio_input_bit_get(__SDA_PORT, __SDA_PIN))
+    {
+        if(++timeout > SHT20_ACK_TIMEOUT)
+        {
+            return false;
+        }
+    }
     __SCL_Low();
-    DWT_Delay_us(10);
-    return ack;
+    return true;
 }
 
 bool __SHT20_WriteByte(uint8_t byte)
