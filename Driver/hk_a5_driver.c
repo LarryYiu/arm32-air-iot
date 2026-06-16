@@ -3,6 +3,10 @@
 #include "config.h"
 #include "RTT_Debug.h"
 
+#define __PA6_SET() gpio_bit_set(GPIOA, GPIO_PIN_6)
+#define __PA6_RESET() gpio_bit_reset(GPIOA, GPIO_PIN_6)
+#define __PA6_GET() gpio_input_bit_get(GPIOA, GPIO_PIN_6)
+
 void HK_A5_Init(void)
 {
     // PA9 TxD - RxD
@@ -14,11 +18,24 @@ void HK_A5_Init(void)
 
 void HK_A5_Enable(void)
 {
-    gpio_bit_set(GPIOA, GPIO_PIN_6);
+    __PA6_SET();
 }
+
 void HK_A5_Disable(void)
 {
-    gpio_bit_reset(GPIOA, GPIO_PIN_6);
+    __PA6_RESET();
+}
+
+void HK_A5_Toggle(void)
+{
+    if(__PA6_GET())
+    {
+        HK_A5_Disable();
+    }
+    else
+    {
+        HK_A5_Enable();
+    }
 }
 
 #define __FRAME_HEADER_H (0x42)
@@ -81,9 +98,12 @@ void HK_A5_Test(void)
 typedef enum __HKA5_STATE __HKA5_STATE_t;
 enum __HKA5_STATE
 {
-    HKA5_STATE_IDLE,
+    HKA5_STATE_OFF,
     HKA5_STATE_READ,
-    HKA5_STATE_VALIDATE
+    HKA5_STATE_VALIDATE,
+    HKA5_STATE_PROCESS,
 };
+
+static __HKA5_STATE_t __hka5State = HKA5_STATE_READ;
 
 void HK_A5_Run(void) {}
