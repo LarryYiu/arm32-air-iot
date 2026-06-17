@@ -454,6 +454,11 @@
               <FileType>1</FileType>
               <FilePath>.\Driver\esp8684_driver.c</FilePath>
             </File>
+            <File>
+              <FileName>internal_flash.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Driver\internal_flash.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -518,6 +523,11 @@
               <FileName>gd32f30x_pmu.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Gd32_Lib\Source\gd32f30x_pmu.c</FilePath>
+            </File>
+            <File>
+              <FileName>gd32f30x_fmc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Gd32_Lib\Source\gd32f30x_fmc.c</FilePath>
             </File>
           </Files>
         </Group>

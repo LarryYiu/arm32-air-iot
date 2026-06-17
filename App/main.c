@@ -10,6 +10,7 @@
 #include "rtc.h"
 #include "wifi_app.h"
 #include "esp8684_driver.h"
+#include "internal_flash.h"
 
 void ShortPressListener(void)
 {
@@ -27,7 +28,8 @@ void ShortPressListener(void)
     //     DBG_log("[SHT20] Humidity: %d.%02d %%\n", humidity / 100, humidity % 100);
     // }
     // BAT_Test();
-    RTC_Test();
+    // RTC_Test();
+    FLASH_Test();
 }
 
 int main()
