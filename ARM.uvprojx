@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define></Define>
               <Undefine></Undefine>
-              <IncludePath>.\App;.\Arm_kernel;.\Gd32_Lib;.\Gd32_Lib\Include;.\Driver;.\Rtt_Segger</IncludePath>
+              <IncludePath>.\App;.\Arm_kernel;.\Gd32_Lib;.\Gd32_Lib\Include;.\Driver;.\Rtt_Segger;.\Protocol</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -388,6 +388,11 @@
               <FileName>main.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\App\main.c</FilePath>
+            </File>
+            <File>
+              <FileName>wifi_app.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\App\wifi_app.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -439,6 +444,16 @@
               <FileType>1</FileType>
               <FilePath>.\Driver\battery_lvl.c</FilePath>
             </File>
+            <File>
+              <FileName>rtc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Driver\rtc.c</FilePath>
+            </File>
+            <File>
+              <FileName>esp8684_driver.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Driver\esp8684_driver.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -489,6 +504,21 @@
               <FileType>1</FileType>
               <FilePath>.\Gd32_Lib\Source\gd32f30x_adc.c</FilePath>
             </File>
+            <File>
+              <FileName>gd32f30x_bkp.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Gd32_Lib\Source\gd32f30x_bkp.c</FilePath>
+            </File>
+            <File>
+              <FileName>gd32f30x_rtc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Gd32_Lib\Source\gd32f30x_rtc.c</FilePath>
+            </File>
+            <File>
+              <FileName>gd32f30x_pmu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Gd32_Lib\Source\gd32f30x_pmu.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -503,6 +533,16 @@
               <FileName>SEGGER_RTT_printf.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Rtt_Segger\SEGGER_RTT_printf.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Protocol</GroupName>
+          <Files>
+            <File>
+              <FileName>at.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Protocol\at.c</FilePath>
             </File>
           </Files>
         </Group>

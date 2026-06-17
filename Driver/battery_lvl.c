@@ -36,6 +36,7 @@ void __BAT_GPIO_Config()
     // PC5 - ADC1_CH15
     rcu_periph_clock_enable(RCU_GPIOC);
     gpio_init(GPIOC, GPIO_MODE_AIN, GPIO_OSPEED_MAX, GPIO_PIN_5);
+    gpio_init(GPIOC, GPIO_MODE_IPU, GPIO_OSPEED_2MHZ, GPIO_PIN_7);
     gpio_init(GPIOC, GPIO_MODE_IPU, GPIO_OSPEED_2MHZ,
               GPIO_PIN_13); // pull up to give a default high level when USB is not plugged in, drag down to gnd through
                             // BJT when USB is plugged in
@@ -72,13 +73,11 @@ void __BAT_ADC_Config()
     adc_software_trigger_enable(ADC1, ADC_REGULAR_CHANNEL);
 }
 
-void __BAT_DMA_Config() {}
-
 void BAT_Init()
 {
     __BAT_GPIO_Config();
     __BAT_ADC_Config();
-    __BAT_DMA_Config();
+    /* ADC1 does not support DMA */
 }
 
 bool __IsUsbPlugged(void)

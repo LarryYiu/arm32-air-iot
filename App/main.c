@@ -7,6 +7,9 @@
 #include "RTT_Debug.h"
 #include "hk_a5_driver.h"
 #include "battery_lvl.h"
+#include "rtc.h"
+#include "wifi_app.h"
+#include "esp8684_driver.h"
 
 void ShortPressListener(void)
 {
@@ -24,6 +27,7 @@ void ShortPressListener(void)
     //     DBG_log("[SHT20] Humidity: %d.%02d %%\n", humidity / 100, humidity % 100);
     // }
     // BAT_Test();
+    RTC_Test();
 }
 
 int main()
@@ -34,6 +38,8 @@ int main()
     SHT20_Init();
     HK_A5_Init();
     BAT_Init();
+    RTC_Init();
+    ESP8684_Init();
     SYSTICK_Config();
 
     KEY_AddShortPressListener(0, ShortPressListener);
@@ -42,8 +48,9 @@ int main()
     DBG_log("RTT running...\n");
     while(1)
     {
-        // KEY_Scan(0);
+        KEY_Scan(0);
         // SHT20_Run();
         // HK_A5_Run();
+        // WIFI_Run();
     }
 }
