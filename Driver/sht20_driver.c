@@ -90,7 +90,9 @@ void SHT20_Disable(void)
     rcu_periph_clock_disable(GPIO_GetRcuPeriph(SHT20_SDA_PIN));
     gpio_init(__SCL_PORT, GPIO_MODE_AIN, GPIO_OSPEED_50MHZ, __SCL_PIN);
     gpio_init(__SDA_PORT, GPIO_MODE_AIN, GPIO_OSPEED_50MHZ, __SDA_PIN);
-    __state = __STATE_IDLE;
+    __state           = __STATE_IDLE;
+    __tempUpdated     = false;
+    __humidityUpdated = false;
 }
 
 void __forceinline __Start(void)
@@ -405,4 +407,9 @@ float SHT20_GetHumidity(bool handleError)
             return __lastHumidity;
         }
     }
+}
+
+bool SHT20_IsUpdated(void)
+{
+    return __tempUpdated || __humidityUpdated;
 }

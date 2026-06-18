@@ -10,6 +10,9 @@
 #define __PA6_RESET() gpio_bit_reset(GPIOA, GPIO_PIN_6)
 #define __PA6_GET() gpio_input_bit_get(GPIOA, GPIO_PIN_6)
 
+static uint16_t __pm25Value      = 0;
+static bool __isPm25ValueUpdated = false;
+
 typedef enum __HKA5_STATE __HKA5_STATE_t;
 enum __HKA5_STATE
 {
@@ -143,17 +146,33 @@ void HK_A5_Run(void)
         case HKA5_STATE_PROCESS:
         {
             // Process the validated data, test case below
-            uint16_t pm25 = (uint16_t)dataSnapshot[__INDEX_PM25_H] << 8 | dataSnapshot[__INDEX_PM25_L];
-            uint16_t partical25 =
-                (uint16_t)dataSnapshot[__INDEX_PARTICAL25_H] << 8 | dataSnapshot[__INDEX_PARTICAL25_L];
-            DBG_log("[HK_A5] PM2.5: %d ug/m3, Partical 2.5: %d ug/m3\n", pm25, partical25);
-            __timeout = SYSTICK_GetSysRunTime();
-            __state   = HKA5_STATE_READ;
+            // uint16_t pm25 = (uint16_t)dataSnapshot[__INDEX_PM25_H] << 8 | dataSnapshot[__INDEX_PM25_L];
+            // uint16_t partical25 =
+            //     (uint16_t)dataSnapshot[__INDEX_PARTICAL25_H] << 8 | dataSnapshot[__INDEX_PARTICAL25_L];
+            // DBG_log("[HK_A5] PM2.5: %d ug/m3, Partical 2.5: %d ug/m3\n", pm25, partical25);
+            // __timeout = SYSTICK_GetSysRunTime();
+            // __state   = HKA5_STATE_READ;
+
+            __pm25Value          = (uint16_t)dataSnapshot[__INDEX_PM25_H] << 8 | dataSnapshot[__INDEX_PM25_L];
+            __isPm25ValueUpdated = true;
+            __timeout            = SYSTICK_GetSysRunTime();
+            __state              = HKA5_STATE_READ;
         }
         break;
         default:
             break;
     }
+}
+
+bool HK_A5_IsPm25ValueUpdated(void)
+{
+    return __isPm25ValueUpdated;
+}
+
+uint16_t HK_A5_GetPm25Value(void)
+{
+    __isPm25ValueUpdated = false;
+    return __pm25Value;
 }
 
 void HK_A5_Test(void)

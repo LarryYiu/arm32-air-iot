@@ -38,6 +38,14 @@ COMM_STATE_t AT_CmdHandler(const AT_Cmd_t* cmd)
     return __atFSM.stateHandler();
 }
 
+COMM_STATE_t _AT_CmdHandler(char* cmd, char* desiredResponse, uint32_t timeoutMs, uint8_t maxRetry)
+{
+    static AT_Cmd_t atCmd;
+    atCmd = (AT_Cmd_t){.cmd = cmd, .desiredResponse = desiredResponse, .timeoutMs = timeoutMs, .maxRetry = maxRetry};
+    __atFSM.currentCmd = &atCmd;
+    return __atFSM.stateHandler();
+}
+
 static COMM_STATE_t __onSend(void)
 {
 #if DEBUG_PRINTING

@@ -13,6 +13,7 @@
 #define MQTT_CONN_CMD(reconnect) "AT+MQTTCONN=0,\"" MQTT_HOST "\"," MQTT_PORT "," reconnect "\r\n"
 #define MQTT_USERCFG_CMD(keepAlive, qos, retain)  "AT+MQTTUSERCFG=0,"keepAlive",\""MQTT_DEVICE_NAME"\",\""MQTT_PRODUCT_ID"\",\""MQTT_DEVICE_TOKEN"\","qos","retain",\"\"\r\n"
 // clang-format on
+#define MQTT_DAT_UPLOAD_PERIOD_MS 3000UL
 
 #define UTC(x) #x
 #define SNTP_SERVER_1 "cn.ntp.org.cn"

@@ -16,6 +16,8 @@ float SHT20_GetTemp(bool handleError);
 
 float SHT20_GetHumidity(bool handleError);
 
+bool SHT20_IsUpdated(void);
+
 float SHT20_test(void);
 
 #endif // __SHT20_DRIVER_H__

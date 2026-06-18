@@ -24,6 +24,7 @@ enum COMM_STATE
 };
 
 COMM_STATE_t AT_CmdHandler(const AT_Cmd_t* cmd);
+COMM_STATE_t _AT_CmdHandler(char* cmd, char* desiredResponse, uint32_t timeoutMs, uint8_t maxRetry);
 
 COMM_STATE_t AT_Init(void);
 
