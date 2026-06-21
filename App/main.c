@@ -53,6 +53,6 @@ int main()
         KEY_Scan(0);
         // SHT20_Run();
         // HK_A5_Run();
-        WIFI_Run();
+        // WIFI_Run();
     }
 }

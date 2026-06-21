@@ -51,7 +51,7 @@ static COMM_STATE_t __onSend(void)
 #if DEBUG_PRINTING
     if(__atFSM.currentCmd->cmd)
         DBG_log("[AT] Sending: [%s]\n", __atFSM.currentCmd->cmd);
-    else
+    else if(__atFSM.currentCmd->timeoutMs > 1)
         DBG_log("[AT] Delaying\n");
 #endif
     if(__atFSM.currentCmd->cmd != NULL)
@@ -91,7 +91,7 @@ static COMM_STATE_t __onWait(void)
 #if DEBUG_PRINTING
             if(__atFSM.currentCmd->cmd)
                 DBG_log("[Error(fail) AT] Timeout [%s]\n", __atFSM.currentCmd->cmd);
-            else
+            else if(__atFSM.currentCmd->timeoutMs > 1)
                 DBG_log("[AT] Delay Done\n");
 #endif
             retry              = 0;
@@ -155,8 +155,9 @@ static COMM_STATE_t __onReceive(void)
         if(retry < __atFSM.currentCmd->maxRetry)
         {
 #if DEBUG_PRINTING
-            DBG_log("[Error(retry) AT] unmatched response [%s]\n",
-                    __atFSM.currentCmd->cmd ? __atFSM.currentCmd->cmd : "delay");
+            if(__atFSM.currentCmd->timeoutMs > 1)
+                DBG_log("[Error(retry) AT] unmatched response [%s]\n",
+                        __atFSM.currentCmd->cmd ? __atFSM.currentCmd->cmd : "delay");
 #endif
             retry++;
             return COMM_STATE_PROCESSING;
@@ -164,8 +165,9 @@ static COMM_STATE_t __onReceive(void)
         else
         {
 #if DEBUG_PRINTING
-            DBG_log("[Error(fail) AT] unmatched response [%s]\n",
-                    __atFSM.currentCmd->cmd ? __atFSM.currentCmd->cmd : "delay");
+            if(__atFSM.currentCmd->timeoutMs > 1)
+                DBG_log("[Error(fail) AT] unmatched response [%s]\n",
+                        __atFSM.currentCmd->cmd ? __atFSM.currentCmd->cmd : "delay");
 #endif
             retry              = 0;
             __atFSM.currentCmd = NULL;

@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 #include "at.h"
 #include "iot_config.h"
 #include "systick.h"
@@ -9,6 +10,7 @@
 #include "RTT_Debug.h"
 #include "sht20_driver.h"
 #include "hk_a5_driver.h"
+#include "led_driver.h"
 
 #define DEBUG_PRINTING true
 
@@ -72,7 +74,7 @@ static COMM_STATE_t __WIFI_ConnectInternet(void)
             if(commState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
-                DBG_log("[WIFI] Delaying\n");
+                DBG_log("[WIFI] Delaying for wifi connection...\n");
 #endif
                 AT_ClearResponseSnapshot();
                 // atCmd = AT_CWJAP_SSID_PWD;
@@ -202,15 +204,28 @@ static COMM_STATE_t __WIFI_ConnectIotServer(void)
     return COMM_STATE_PROCESSING;
 }
 
+typedef struct
+{
+    char id[20];
+    uint8_t ledVal;
+} SUB_TOPIC_DATA_t;
+
 typedef enum
 {
-    // AT_LISTEN,
+    AT_LISTEN_SUB,
+    AT_REPLY_SUB,
     AT_SNTPTIME,
     AT_MQTT_PUB_SENSOR_DATA
 } AT_BUSINESS_CMD_INDEX_t;
 
-static AT_Cmd_t __AT_BUSINESS_CMD[] = {
-    // [AT_LISTEN]   = {.cmd = NULL, .desiredResponse = "deadbeaf", .timeoutMs = 500, .maxRetry = 0},
+static const AT_Cmd_t __AT_BUSINESS_CMD[] = {
+    [AT_LISTEN_SUB] = {.cmd = NULL, .desiredResponse = "thing/property/set", .timeoutMs = 1, .maxRetry = 0},
+    [AT_REPLY_SUB] =
+        {.cmd = "AT+MQTTPUB=0,\"$sys/4m3RoDJR8n/GD32Air/thing/property/"
+                "set_reply\",\"{\\\"id\\\":\\\"%s\\\"\\,\\\"code\\\": 200\\,\\\"msg\\\":\\\"success\\\"}\",0,0\r\n",
+         .desiredResponse = "OK",
+         .timeoutMs       = 3000,
+         .maxRetry        = 2},
     [AT_SNTPTIME] = {.cmd = "AT+CIPSNTPTIME?\r\n", .desiredResponse = "OK", .timeoutMs = 500, .maxRetry = 0},
     [AT_MQTT_PUB_SENSOR_DATA] = {
         .cmd =
@@ -225,6 +240,57 @@ static AT_Cmd_t __AT_BUSINESS_CMD[] = {
 static __forceinline AT_BUSINESS_CMD_INDEX_t __IncrementAtBusinessCmd(AT_BUSINESS_CMD_INDEX_t cmd)
 {
     return (AT_BUSINESS_CMD_INDEX_t)((cmd + 1) % (AT_MQTT_PUB_SENSOR_DATA + 1));
+}
+
+static bool __HandleSubTopicPayload(const char* payload, SUB_TOPIC_DATA_t* subTopicData)
+{
+    // parse id
+    char* idStart = strstr(payload, "\"id\":\"");
+    if(idStart)
+    {
+        idStart += strlen("\"id\":\"");
+        char* idEnd = strchr(idStart, '\"');
+        if(idEnd && idEnd > idStart)
+        {
+            size_t idLength = idEnd - idStart;
+            char idBuffer[20];
+            if(idLength < sizeof(idBuffer))
+            {
+                strncpy(subTopicData->id, idStart, idLength);
+                subTopicData->id[idLength] = '\0';
+                DBG_log("[WIFI] Sub ID: %s\n", subTopicData->id);
+                // send reply
+            }
+            else
+            {
+                return false;
+            }
+        }
+        else
+        {
+            return false;
+        }
+    }
+    else
+    {
+        return false;
+    }
+    // parse param
+    char* ledParamPtr = strstr(payload, "IotPropLeds\":");
+    if(ledParamPtr)
+    {
+        ledParamPtr += strlen("IotPropLeds\":");
+        uint8_t ledVal = atoi(ledParamPtr);
+        if(ledVal <= 7 && ledVal >= 0)
+            subTopicData->ledVal = ledVal;
+        else
+            return false;
+    }
+    else
+    {
+        return false;
+    }
+    return true;
 }
 
 static void __UpdateRtcTimeBySntpResponse(const char* sntpResponse)
@@ -283,8 +349,6 @@ static void __UpdateRtcTimeBySntpResponse(const char* sntpResponse)
     RTC_SetTime(&time);
 }
 
-// add function handle the sub return
-
 static COMM_STATE_t __WIFI_CommIotServer(void)
 {
     static COMM_STATE_t currCommState    = COMM_STATE_OK;
@@ -292,13 +356,79 @@ static COMM_STATE_t __WIFI_CommIotServer(void)
     static uint64_t lastSntpSysTime      = 0;
     static uint64_t lastPubSysTime       = 0;
     static char cmdStrBuf[256];
-    // register the handle function for sub
+    static SUB_TOPIC_DATA_t subTopicData;
 
     switch(atCmd)
     {
-        // case AT_LISTEN:
-        //     atCmd = __IncrementAtBusinessCmd(atCmd);
-        //     break;
+        case AT_LISTEN_SUB:
+            currCommState = AT_CmdHandler(__AT_BUSINESS_CMD + atCmd);
+            if(currCommState == COMM_STATE_OK)
+            {
+#if DEBUG_PRINTING
+                DBG_log("[WIFI] Recv Sub Topic\n");
+#endif
+                if(!__HandleSubTopicPayload(AT_GetResponseSnapshot(), &subTopicData))
+                {
+#if DEBUG_PRINTING
+                    DBG_log("[WIFI] Sub Topic Payload Parsing Failed\n");
+#endif
+                    AT_ClearResponseSnapshot();
+                    atCmd = AT_SNTPTIME;
+                    return COMM_STATE_FAILED_RESPONSE;
+                }
+                AT_ClearResponseSnapshot();
+#if DEBUG_PRINTING
+                DBG_log("[WIFI] parsed data: id %s, led %d\n", subTopicData.id, subTopicData.ledVal);
+#endif
+                if(subTopicData.ledVal >= 1)
+                {
+                    LED_Enable(0);
+                }
+                else
+                {
+                    LED_Disable(0);
+                }
+                atCmd = __IncrementAtBusinessCmd(atCmd);
+                return COMM_STATE_OK;
+            }
+            if(currCommState == COMM_STATE_FAILED_TIMER || currCommState == COMM_STATE_FAILED_RESPONSE)
+            {
+#if DEBUG_PRINTING
+                DBG_log("[WIFI] No Sub Topic\n");
+#endif
+                AT_ClearResponseSnapshot();
+                atCmd = AT_SNTPTIME;
+                return currCommState;
+            }
+            break;
+        case AT_REPLY_SUB:
+            if(currCommState != COMM_STATE_PROCESSING)
+            {
+                memset(cmdStrBuf, 0, 256);
+                snprintf(cmdStrBuf, 256, __AT_BUSINESS_CMD[AT_REPLY_SUB].cmd, subTopicData.id);
+            }
+            currCommState =
+                _AT_CmdHandler(cmdStrBuf, __AT_BUSINESS_CMD[AT_REPLY_SUB].desiredResponse,
+                               __AT_BUSINESS_CMD[AT_REPLY_SUB].timeoutMs, __AT_BUSINESS_CMD[AT_REPLY_SUB].maxRetry);
+            if(currCommState == COMM_STATE_OK)
+            {
+#if DEBUG_PRINTING
+                DBG_log("[WIFI] Reply Sub Topic Success\n");
+#endif
+                AT_ClearResponseSnapshot();
+                atCmd = __IncrementAtBusinessCmd(atCmd);
+                return COMM_STATE_OK;
+            }
+            else if(currCommState == COMM_STATE_FAILED_TIMER || currCommState == COMM_STATE_FAILED_RESPONSE)
+            {
+#if DEBUG_PRINTING
+                DBG_log("[WIFI] Reply Sub Topic Failed\n");
+#endif
+                AT_ClearResponseSnapshot();
+                atCmd = __IncrementAtBusinessCmd(atCmd);
+                return currCommState;
+            }
+            break;
         case AT_SNTPTIME:
             if(currCommState != COMM_STATE_PROCESSING)
             {
@@ -355,6 +485,7 @@ static COMM_STATE_t __WIFI_CommIotServer(void)
 #if DEBUG_PRINTING
                         DBG_log("[WIFI] New Sensor Data Detected\n");
 #endif
+                        memset(cmdStrBuf, 0, 256);
                         sprintf(cmdStrBuf, __AT_BUSINESS_CMD[AT_MQTT_PUB_SENSOR_DATA].cmd, SHT20_GetTemp(false),
                                 (int32_t)SHT20_GetHumidity(false), (int32_t)HK_A5_GetPm25Value());
                     }
