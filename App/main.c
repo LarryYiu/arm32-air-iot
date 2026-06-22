@@ -1,4 +1,5 @@
 #include <math.h>
+#include "gd32f30x.h"
 #include "led_driver.h"
 #include "key_driver.h"
 #include "dwt_delay.h"
@@ -11,6 +12,7 @@
 #include "wifi_app.h"
 #include "esp8684_driver.h"
 #include "internal_flash.h"
+#include "storage_app.h"
 
 void ShortPressListener(void)
 {
@@ -30,10 +32,20 @@ void ShortPressListener(void)
     // BAT_Test();
     // RTC_Test();
     // FLASH_Test();
+
+    char version[10];
+    STORAGE_GetSysVersion(version);
+    DBG_log("[APP] Current sys version: %s\n", version);
+
+    // char version[10] = "1.0.1";
+    // STORAGE_SetSysVersion(version);
+
+    // FLASH_Erase(FLASH_SYS_PARAM_ADDR, FLASH_PAGE_SIZE);
 }
 
 int main()
 {
+    __enable_irq();
     LED_Config();
     DWT_Init();
     KEY_Config();
@@ -43,6 +55,7 @@ int main()
     RTC_Init();
     ESP8684_Init();
     SYSTICK_Config();
+    STORAGE_Init();
 
     KEY_AddShortPressListener(0, ShortPressListener);
 

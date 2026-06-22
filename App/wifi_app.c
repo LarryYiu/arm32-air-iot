@@ -281,7 +281,7 @@ static bool __HandleSubTopicPayload(const char* payload, SUB_TOPIC_DATA_t* subTo
     {
         ledParamPtr += strlen("IotPropLeds\":");
         uint8_t ledVal = atoi(ledParamPtr);
-        if(ledVal <= 7 && ledVal >= 0)
+        if(ledVal <= 7)
             subTopicData->ledVal = ledVal;
         else
             return false;
