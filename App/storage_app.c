@@ -194,8 +194,11 @@ bool __STORAGE_WriteSysParam(SysParam_t* sysParam)
     sysParam->crc   = __CalcCrc8(buffer, SYS_PARAM_DATA_SIZE - 1); // exclude crc field
     buffer[BIT_CRC] = sysParam->crc;
 
-    if(__flashIndex >= SYS_PARAM_DATA_SIZE / 8)
+    if(__flashIndex >= FLASH_PAGE_SIZE / SYS_PARAM_DATA_SIZE)
     {
+#if DEBUG_PRINT
+        DBG_log("[Storage WRITE] Page for sys param is full, erasing...\n");
+#endif
         if(!FLASH_Erase(FLASH_SYS_PARAM_ADDR, FLASH_PAGE_SIZE))
         {
 #if DEBUG_PRINT
@@ -272,8 +275,10 @@ bool STORAGE_SetSysVersion(char* version)
         {
             __currSysParam = bufferSysParam;
 #if DEBUG_PRINT
-            DBG_log("[Storage APP] Sys param written to flash successfully. Version: %s, CRC: 0x%02X, Rollback: %s\n",
-                    __currSysParam.version, __currSysParam.crc, (__currSysParam.flags & 0x01) ? "true" : "false");
+            DBG_log("[Storage APP] Sys param written to flash successfully. [%hhu] Version: %s, CRC: 0x%02X, Rollback: "
+                    "%s\n",
+                    __flashIndex, __currSysParam.version, __currSysParam.crc,
+                    (__currSysParam.flags & 0x01) ? "true" : "false");
 #endif
             return true;
         }
