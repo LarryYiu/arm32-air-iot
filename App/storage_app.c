@@ -87,8 +87,10 @@ bool __STORAGE_IsAnySysParamWritten(void)
     if((((uint32_t)buffer[BIT_MAGIC_CODE_0] << 24) | ((uint32_t)buffer[BIT_MAGIC_CODE_1] << 16) |
         ((uint32_t)buffer[BIT_MAGIC_CODE_2] << 8) | (uint32_t)buffer[BIT_MAGIC_CODE_3]) != STORE_MAGIC_CODE)
     {
+#if DEBUG_PRINT
         DBG_log("[Storage Touched] No sys param found in flash, got 0x%02X%02X%02X%02X.\n", buffer[BIT_MAGIC_CODE_0],
                 buffer[BIT_MAGIC_CODE_1], buffer[BIT_MAGIC_CODE_2], buffer[BIT_MAGIC_CODE_3]);
+#endif
         __flashIndex = 0;
         return false;
     }

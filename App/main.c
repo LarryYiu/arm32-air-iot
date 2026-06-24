@@ -16,8 +16,6 @@
 #include "internal_flash.h"
 #include "storage_app.h"
 
-static uint8_t versionNum = 2;
-
 void ShortPressListener(void)
 {
     // float _temp     = SHT20_GetTemp(false);
@@ -41,12 +39,15 @@ void ShortPressListener(void)
     // STORAGE_GetSysVersion(version);
     // DBG_log("[APP] Current sys version: %s\n", version);
 
-    char version[10] = "1.0.1";
-    memset(version, 0, 10);
-    sprintf(version, "1.%hhu", ++versionNum);
-    STORAGE_SetSysVersion(version);
+    // static uint8_t versionNum = 2;
+    // char version[10] = "1.0.1";
+    // memset(version, 0, 10);
+    // sprintf(version, "1.%hhu", ++versionNum);
+    // STORAGE_SetSysVersion(version);
 
     // FLASH_Erase(FLASH_SYS_PARAM_ADDR, FLASH_PAGE_SIZE);
+
+    WIFI_RestartSmartConfig();
 }
 
 int main()

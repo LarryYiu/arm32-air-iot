@@ -1,10 +1,9 @@
 #include "wifi_app.h"
 #include <stdint.h>
-#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "at.h"
-#include "iot_config.h"
 #include "systick.h"
 #include "rtc.h"
 #include "RTT_Debug.h"
@@ -14,8 +13,44 @@
 
 #define DEBUG_PRINTING true
 
+#ifndef WIFI_USE_SMART_CONFIG
+#define WIFI_USE_SMART_CONFIG false
+#endif
+
+#define DEBUG_PRINT_CWSTATE_RESPONSE true
+
+#if WIFI_USE_SMART_CONFIG
+static uint64_t __smartConfigStartsAt = 0;
+static bool __flagRestartSmartConfig  = false;
+
+bool WIFI_IsSmartConfigTimedOut(void)
+{
+#if false
+    uint64_t sysRuntime = SYSTICK_GetSysRunTime();
+    if((sysRuntime - __smartConfigStartsAt) % 1000 == 0)
+    {
+        DBG_log("[WIFI Smart CD] %d sec\n",
+                (SMART_CONFIG_WAITING_TIME_MS - (sysRuntime - __smartConfigStartsAt)) / 1000);
+    }
+    return (sysRuntime - __smartConfigStartsAt > SMART_CONFIG_WAITING_TIME_MS);
+#else
+    return (SYSTICK_GetSysRunTime() - __smartConfigStartsAt > SMART_CONFIG_WAITING_TIME_MS);
+#endif
+}
+
+void WIFI_RestartSmartConfig(void)
+{
+    __flagRestartSmartConfig = true;
+}
+#endif
+
+#if WIFI_USE_SMART_CONFIG
+static COMM_STATE_t __WIFI_SmartConfig(void);
+#else
 static COMM_STATE_t __WIFI_ConnectInternet(void);
-static COMM_STATE_t __WIFI_ConnectIotServer(void);
+#endif
+
+static COMM_STATE_t __WIFI_ConnectMqttServer(void);
 static COMM_STATE_t __WIFI_CommIotServer(void);
 
 typedef struct WIFI_FSM WIFI_FSM_t;
@@ -24,12 +59,199 @@ struct WIFI_FSM
     COMM_STATE_t (*stateHandler)(void);
 };
 
+#if WIFI_USE_SMART_CONFIG
+static WIFI_FSM_t wifiFsm = {.stateHandler = __WIFI_SmartConfig};
+#else
 static WIFI_FSM_t wifiFsm = {.stateHandler = __WIFI_ConnectInternet};
+#endif
 
 #define __AT_CWJAP_SSID_PWD_CMD "AT+CWJAP=\"" WIFI_SSID "\",\"" WIFI_PWD "\"\r\n"
 #define __AT_SNTPCFG_CMD "AT+CIPSNTPCFG=1," UTC(8) ",\"" SNTP_SERVER_1 "\",\"" SNTP_SERVER_2 "\"\r\n"
 #define __AT_SUBSCRIBE_CMD "AT+MQTTSUB=0,\"$sys/" MQTT_PRODUCT_ID "/" MQTT_DEVICE_NAME "/thing/property/set\",0\r\n"
 
+#if DEBUG_PRINT_CWSTATE_RESPONSE
+
+static void __PrintCWStateResponse()
+{
+    //+CWSTATE:<state>,<"ssid">
+    char* ptr         = strstr(AT_GetResponseSnapshot(), "+CWSTATE:");
+    uint8_t stateCode = atoi(ptr + 9); // Skip "+CWSTATE:" to get the state code
+    DBG_log("[WIFI] CWSTATE: %hhu\n", stateCode);
+
+    char* ssidStart = strchr(ptr, '\"');
+    if(ssidStart)
+    {
+        ssidStart++; // Move past the opening quote
+        char* ssidEnd = strchr(ssidStart, '\"');
+        if(ssidEnd && ssidEnd > ssidStart)
+        {
+            size_t ssidLength = ssidEnd - ssidStart;
+            char SSID[32];
+            memset(SSID, 0, 32);
+            strncpy(SSID, ssidStart, ssidLength);
+            SSID[ssidLength] = '\0';
+            DBG_log("[WIFI] Connected SSID: %s\n", SSID);
+        }
+    }
+}
+#endif
+
+#if WIFI_USE_SMART_CONFIG
+typedef enum
+{
+    AT_START_SMART_CONFIG = 0,
+    AT_SMART_CONFIG_DELAY,
+    AT_REPLY_APP_DELAY,
+    AT_STOP_SMART_CONFIG,
+    AT_WIFI_CONNECTION_CHECK,
+    AT_SMART_CONFIG_IDLE
+} AT_CONFIG_WIFI_CMD_INDEX_t;
+
+static const AT_Cmd_t __AT_CONFIG_WIFI_CMD[] = {
+    [AT_START_SMART_CONFIG] = {.cmd = "AT+CWSTARTSMART\r\n", .desiredResponse = "OK", .timeoutMs = 1000, .maxRetry = 3},
+    [AT_SMART_CONFIG_DELAY] = {.cmd = NULL, .desiredResponse = "GOT IP", .timeoutMs = 1, .maxRetry = 0},
+    [AT_REPLY_APP_DELAY]    = {.cmd = NULL, .desiredResponse = "deadbeef", .timeoutMs = 6000, .maxRetry = 0},
+    [AT_STOP_SMART_CONFIG]  = {.cmd = "AT+CWSTOPSMART\r\n", .desiredResponse = "OK", .timeoutMs = 1000, .maxRetry = 3},
+    [AT_WIFI_CONNECTION_CHECK] = {.cmd = "AT+CWSTATE?\r\n", .desiredResponse = ":2", .timeoutMs = 1000, .maxRetry = 3},
+    [AT_SMART_CONFIG_IDLE]     = {.cmd = NULL, .desiredResponse = "deadbeef", .timeoutMs = 1, .maxRetry = 0}};
+
+static COMM_STATE_t __WIFI_SmartConfig(void)
+{
+    COMM_STATE_t commState;
+    static AT_CONFIG_WIFI_CMD_INDEX_t atCmd = AT_START_SMART_CONFIG;
+
+    switch(atCmd)
+    {
+        case AT_SMART_CONFIG_IDLE:
+            if(__flagRestartSmartConfig)
+            {
+                AT_ClearResponseSnapshot();
+                atCmd = AT_STOP_SMART_CONFIG;
+            }
+            return COMM_STATE_IDLE;
+        case AT_START_SMART_CONFIG:
+            commState = AT_CmdHandler(__AT_CONFIG_WIFI_CMD + AT_START_SMART_CONFIG);
+            if(commState == COMM_STATE_OK)
+            {
+#if DEBUG_PRINTING
+                DBG_log("[WIFI Smart] Smart Config Started\n");
+#endif
+                AT_ClearResponseSnapshot();
+                __smartConfigStartsAt = SYSTICK_GetSysRunTime();
+                atCmd                 = AT_SMART_CONFIG_DELAY;
+                return COMM_STATE_OK;
+            }
+            if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                return commState;
+            }
+            break;
+        case AT_SMART_CONFIG_DELAY:
+            if(__flagRestartSmartConfig)
+            {
+                __flagRestartSmartConfig = false;
+                atCmd                    = AT_START_SMART_CONFIG;
+                break;
+            }
+
+            if(WIFI_IsSmartConfigTimedOut())
+            {
+#if DEBUG_PRINTING
+                DBG_log("[WIFI Smart] Timed Out\n");
+#endif
+                atCmd = AT_SMART_CONFIG_IDLE;
+                return COMM_STATE_FAILED_TIMER;
+            }
+            else
+            {
+                commState = AT_CmdHandler(__AT_CONFIG_WIFI_CMD + AT_SMART_CONFIG_DELAY);
+                if(commState == COMM_STATE_OK)
+                {
+#if DEBUG_PRINTING
+                    DBG_log("[WIFI Smart] WIFI Config done\n");
+#endif
+                    AT_ClearResponseSnapshot();
+                    atCmd = AT_REPLY_APP_DELAY;
+                    return COMM_STATE_OK;
+                }
+                else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+                {
+                    AT_ClearResponseSnapshot();
+                    return commState;
+                }
+            }
+            break;
+        case AT_REPLY_APP_DELAY:
+            commState = AT_CmdHandler(__AT_CONFIG_WIFI_CMD + AT_REPLY_APP_DELAY);
+            if(commState == COMM_STATE_OK)
+            {
+#if DEBUG_PRINTING
+                DBG_log("[WIFI Smart] REPLY APP DONE\n");
+#endif
+                AT_ClearResponseSnapshot();
+                atCmd = AT_STOP_SMART_CONFIG;
+                return COMM_STATE_OK;
+            }
+            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                atCmd = AT_STOP_SMART_CONFIG;
+                return commState;
+            }
+            break;
+        case AT_STOP_SMART_CONFIG:
+            commState = AT_CmdHandler(__AT_CONFIG_WIFI_CMD + AT_STOP_SMART_CONFIG);
+            if(commState == COMM_STATE_OK)
+            {
+#if DEBUG_PRINTING
+                DBG_log("[WIFI Smart] Stop smart config done\n");
+#endif
+                AT_ClearResponseSnapshot();
+                if(__flagRestartSmartConfig)
+                {
+                    __flagRestartSmartConfig = false;
+                    atCmd                    = AT_START_SMART_CONFIG;
+                }
+                else
+                {
+                    atCmd = AT_WIFI_CONNECTION_CHECK;
+                }
+
+                return COMM_STATE_OK;
+            }
+            if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                return commState;
+            }
+            break;
+        case AT_WIFI_CONNECTION_CHECK:
+            commState = AT_CmdHandler(__AT_CONFIG_WIFI_CMD + AT_WIFI_CONNECTION_CHECK);
+            if(commState == COMM_STATE_OK)
+            {
+#if DEBUG_PRINT_CWSTATE_RESPONSE
+                __PrintCWStateResponse();
+#endif
+                AT_ClearResponseSnapshot();
+                wifiFsm.stateHandler = __WIFI_ConnectMqttServer;
+                return COMM_STATE_OK;
+            }
+            if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+#if DEBUG_PRINTING
+                DBG_log("[WIFI Smart] State check failed\n");
+#endif
+                AT_ClearResponseSnapshot();
+                return commState;
+            }
+            break;
+        default:
+            break;
+    }
+    return COMM_STATE_PROCESSING;
+}
+#else
 typedef enum
 {
     AT_CWJAP_SSID_PWD,
@@ -78,7 +300,7 @@ static COMM_STATE_t __WIFI_ConnectInternet(void)
 #endif
                 AT_ClearResponseSnapshot();
                 // atCmd = AT_CWJAP_SSID_PWD;
-                wifiFsm.stateHandler = __WIFI_ConnectIotServer;
+                wifiFsm.stateHandler = __WIFI_ConnectMqttServer;
                 return COMM_STATE_OK;
             }
             else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
@@ -88,7 +310,7 @@ static COMM_STATE_t __WIFI_ConnectInternet(void)
                 // #endif
                 AT_ClearResponseSnapshot();
                 // atCmd                = AT_CWJAP_SSID_PWD;
-                wifiFsm.stateHandler = __WIFI_ConnectIotServer;
+                wifiFsm.stateHandler = __WIFI_ConnectMqttServer;
                 return commState;
             }
             break;
@@ -97,6 +319,17 @@ static COMM_STATE_t __WIFI_ConnectInternet(void)
     }
     return COMM_STATE_PROCESSING;
 }
+#endif
+
+/*OTA Handler Here*/
+/*
+1. connect to OTA server HTTP TCP
+2. Upload current version
+3. check if newer version available
+4. if newer version available, download the new version
+5. set the new version to sys param then write to flash
+6. set the update flag to 1 then reset the system
+*/
 
 typedef enum
 {
@@ -104,7 +337,7 @@ typedef enum
     AT_MQTTCONN,
     AT_SNTPCFG,
     AT_SUBSCRIBE,
-} AT_CONNECT_SERVER_CMD_INDEX_t;
+} AT_CONNECT_MQTT_SERVER_CMD_INDEX_t;
 
 static const AT_Cmd_t __AT_CONNECT_SERVER_CMD[] = {
     [AT_MQTTUSERCFG] =
@@ -114,14 +347,14 @@ static const AT_Cmd_t __AT_CONNECT_SERVER_CMD[] = {
          .desiredResponse = "OK",
          .timeoutMs       = 300,
          .maxRetry        = 3},
-    [AT_MQTTCONN]  = {.cmd = MQTT_CONN_CMD("1"), .desiredResponse = "OK", .timeoutMs = 2000, .maxRetry = 3},
+    [AT_MQTTCONN]  = {.cmd = MQTT_CONN_CMD("1"), .desiredResponse = "OK", .timeoutMs = 5000, .maxRetry = 3},
     [AT_SNTPCFG]   = {.cmd = __AT_SNTPCFG_CMD, .desiredResponse = "OK", .timeoutMs = 500, .maxRetry = 0},
     [AT_SUBSCRIBE] = {.cmd = __AT_SUBSCRIBE_CMD, .desiredResponse = "OK", .timeoutMs = 500, .maxRetry = 3}};
 
-static COMM_STATE_t __WIFI_ConnectIotServer(void)
+static COMM_STATE_t __WIFI_ConnectMqttServer(void)
 {
     COMM_STATE_t commState;
-    static AT_CONNECT_SERVER_CMD_INDEX_t atCmd = AT_MQTTUSERCFG;
+    static AT_CONNECT_MQTT_SERVER_CMD_INDEX_t atCmd = AT_MQTTUSERCFG;
 
     switch(atCmd)
     {
@@ -382,20 +615,18 @@ static COMM_STATE_t __WIFI_CommIotServer(void)
 #endif
                 if(subTopicData.ledVal >= 1)
                 {
-                    LED_Enable(0);
+                    LED_SetState(0, SET);
                 }
                 else
                 {
-                    LED_Disable(0);
+                    LED_SetState(0, RESET);
                 }
                 atCmd = __IncrementAtBusinessCmd(atCmd);
                 return COMM_STATE_OK;
             }
             if(currCommState == COMM_STATE_FAILED_TIMER || currCommState == COMM_STATE_FAILED_RESPONSE)
             {
-#if DEBUG_PRINTING
-                DBG_log("[WIFI] No Sub Topic\n");
-#endif
+                /* case where no sub topic received */
                 AT_ClearResponseSnapshot();
                 atCmd = AT_SNTPTIME;
                 return currCommState;
