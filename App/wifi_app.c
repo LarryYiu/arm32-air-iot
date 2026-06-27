@@ -52,6 +52,7 @@ static COMM_STATE_t __WIFI_ConnectInternet(void);
 
 static COMM_STATE_t __WIFI_ConnectMqttServer(void);
 static COMM_STATE_t __WIFI_CommIotServer(void);
+static COMM_STATE_t __WIFI_ConnectOtaServer(void);
 
 typedef struct WIFI_FSM WIFI_FSM_t;
 struct WIFI_FSM
@@ -65,12 +66,19 @@ static WIFI_FSM_t wifiFsm = {.stateHandler = __WIFI_SmartConfig};
 static WIFI_FSM_t wifiFsm = {.stateHandler = __WIFI_ConnectInternet};
 #endif
 
+// clang-format off
 #define __AT_CWJAP_SSID_PWD_CMD "AT+CWJAP=\"" WIFI_SSID "\",\"" WIFI_PWD "\"\r\n"
 #define __AT_SNTPCFG_CMD "AT+CIPSNTPCFG=1," UTC(8) ",\"" SNTP_SERVER_1 "\",\"" SNTP_SERVER_2 "\"\r\n"
 #define __AT_SUBSCRIBE_CMD "AT+MQTTSUB=0,\"$sys/" MQTT_PRODUCT_ID "/" MQTT_DEVICE_NAME "/thing/property/set\",0\r\n"
+#define __AT_CONNECT_OTA_CMD "AT+CIPSTART=\"TCP\",\"" HTTP_HOST "\",80\r\n"
+#define __AT_OTA_CONNECTION_CHECK_CMD "AT+CIPSTATE?\r\n"
+#define __AT_INIT_VERSION_UPLOAD_CMD "AT+CIPSEND=%d\r\n" // %d is the length of the version string
+#define __AT_OTA_VERSION_UPLOAD_CMD \
+    "POST http://" HTTP_HOST "/fuse-ota/" MQTT_PRODUCT_ID "/" MQTT_DEVICE_NAME "/version HTTP/1.1\r\nAuthorization:" MQTT_DEVICE_TOKEN "\r\nContent-Type:application/json\r\nHost:" HTTP_HOST "\r\nContent-Length:%d\r\n\r\n%s"
+#define __IOT_SYS_VERSION_STR        "{\"s_version\":\"%s\", \"f_version\":\"1.0\"}"
+// clang-format on
 
 #if DEBUG_PRINT_CWSTATE_RESPONSE
-
 static void __PrintCWStateResponse()
 {
     //+CWSTATE:<state>,<"ssid">
@@ -331,6 +339,109 @@ static COMM_STATE_t __WIFI_ConnectInternet(void)
 6. set the update flag to 1 then reset the system
 */
 
+static char __httpPostBuf[500];
+typedef enum
+{
+    AT_OTA_CONNECT_SERVER = 0,
+    AT_OTA_CHECK_CONNECTION,
+    AT_INTIT_VERSION_UPLOAD,
+    AT_UPLOAD_CURR_VERSION,
+
+} AT_OTA_CONNECT_INDEX_t;
+
+static const AT_Cmd_t __AT_OTA_CONNECT_SERVER_CMD[] = {
+    [AT_OTA_CONNECT_SERVER]   = {.cmd             = __AT_CONNECT_OTA_CMD,
+                                 .desiredResponse = "CONNECT",
+                                 .timeoutMs       = 5000,
+                                 .maxRetry        = 3},
+    [AT_OTA_CHECK_CONNECTION] = {.cmd             = __AT_OTA_CONNECTION_CHECK_CMD,
+                                 .desiredResponse = "OK",
+                                 .timeoutMs       = 5000,
+                                 .maxRetry        = 3},
+    [AT_INTIT_VERSION_UPLOAD] = {.cmd             = __AT_INIT_VERSION_UPLOAD_CMD,
+                                 .desiredResponse = ">",
+                                 .timeoutMs       = 5000,
+                                 .maxRetry        = 0},
+    [AT_UPLOAD_CURR_VERSION]  = {.cmd             = __AT_OTA_VERSION_UPLOAD_CMD,
+                                 .desiredResponse = "succ",
+                                 .timeoutMs       = 10000,
+                                 .maxRetry        = 0}};
+
+static COMM_STATE_t __WIFI_ConnectOtaServer(void)
+{
+    COMM_STATE_t commState;
+    static AT_OTA_CONNECT_INDEX_t atCmd = AT_OTA_CONNECT_SERVER;
+    char __cmdBuffer[50];
+    uint16_t strLen = 0;
+
+    switch(atCmd)
+    {
+        case AT_OTA_CONNECT_SERVER:
+            commState = AT_CmdHandler(__AT_OTA_CONNECT_SERVER_CMD + AT_OTA_CONNECT_SERVER);
+            if(commState == COMM_STATE_OK)
+            {
+                AT_ClearResponseSnapshot();
+                atCmd = AT_OTA_CHECK_CONNECTION;
+                return COMM_STATE_OK;
+            }
+            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                return commState;
+            }
+            break;
+        case AT_OTA_CHECK_CONNECTION:
+            commState = AT_CmdHandler(__AT_OTA_CONNECT_SERVER_CMD + AT_OTA_CHECK_CONNECTION);
+            if(commState == COMM_STATE_OK)
+            {
+                AT_ClearResponseSnapshot();
+                char versionStr[50] = {0};
+                STORAGE_GetSysVersion(__cmdBuffer); // borrow the cmdBuffer to store the version string
+                /* "{\"s_version\":\"[real version]\", \"f_version\":\"[does not matter , leave 1.0]\"}" */
+                sprintf(versionStr, __IOT_SYS_VERSION_STR, __cmdBuffer);
+                strLen = strlen(versionStr);
+                memset(__httpPostBuf, 0, sizeof(__httpPostBuf));
+                sprintf(__httpPostBuf, __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].cmd, strLen, versionStr);
+                atCmd = AT_INTIT_VERSION_UPLOAD;
+                return COMM_STATE_OK;
+            }
+            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                atCmd = AT_OTA_CONNECT_SERVER;
+                return commState;
+            }
+            break;
+        case AT_INTIT_VERSION_UPLOAD:
+            sprintf(__cmdBuffer, __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].cmd, strLen);
+            commState =
+                _AT_CmdHandler(__cmdBuffer, __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].desiredResponse,
+                               __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].timeoutMs,
+                               __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].maxRetry);
+            if(commState == COMM_STATE_OK)
+            {
+                AT_ClearResponseSnapshot();
+                atCmd = AT_UPLOAD_CURR_VERSION;
+                return COMM_STATE_OK;
+            }
+            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                atCmd = AT_OTA_CONNECT_SERVER;
+                return commState;
+            }
+            break;
+        case AT_UPLOAD_CURR_VERSION:
+            // TODO: upload the current version string to the OTA server
+            break;
+        default:
+            break;
+    }
+    return COMM_STATE_PROCESSING;
+}
+
+/* OTA Handler Ends */
+
 typedef enum
 {
     AT_MQTTUSERCFG = 0,
@@ -339,7 +450,7 @@ typedef enum
     AT_SUBSCRIBE,
 } AT_CONNECT_MQTT_SERVER_CMD_INDEX_t;
 
-static const AT_Cmd_t __AT_CONNECT_SERVER_CMD[] = {
+static const AT_Cmd_t __AT_MQTT_CONNECT_SERVER_CMD[] = {
     [AT_MQTTUSERCFG] =
         {.cmd = MQTT_USERCFG_CMD("1", "0", "0"),
          //  .cmd = "AT+MQTTUSERCFG=0,1,\"GD32Board\",\"4m3RoDJR8n\",\"version=2018-10-31&res=products%2F4m3RoDJR8n%"
@@ -359,7 +470,7 @@ static COMM_STATE_t __WIFI_ConnectMqttServer(void)
     switch(atCmd)
     {
         case AT_MQTTUSERCFG:
-            commState = AT_CmdHandler(__AT_CONNECT_SERVER_CMD + AT_MQTTUSERCFG);
+            commState = AT_CmdHandler(__AT_MQTT_CONNECT_SERVER_CMD + AT_MQTTUSERCFG);
             if(commState == COMM_STATE_OK)
             {
                 AT_ClearResponseSnapshot();
@@ -372,7 +483,7 @@ static COMM_STATE_t __WIFI_ConnectMqttServer(void)
             }
             break;
         case AT_MQTTCONN:
-            commState = AT_CmdHandler(__AT_CONNECT_SERVER_CMD + AT_MQTTCONN);
+            commState = AT_CmdHandler(__AT_MQTT_CONNECT_SERVER_CMD + AT_MQTTCONN);
             if(commState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
@@ -392,7 +503,7 @@ static COMM_STATE_t __WIFI_ConnectMqttServer(void)
             }
             break;
         case AT_SNTPCFG:
-            commState = AT_CmdHandler(__AT_CONNECT_SERVER_CMD + AT_SNTPCFG);
+            commState = AT_CmdHandler(__AT_MQTT_CONNECT_SERVER_CMD + AT_SNTPCFG);
             if(commState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
@@ -412,7 +523,7 @@ static COMM_STATE_t __WIFI_ConnectMqttServer(void)
             }
             break;
         case AT_SUBSCRIBE:
-            commState = AT_CmdHandler(__AT_CONNECT_SERVER_CMD + AT_SUBSCRIBE);
+            commState = AT_CmdHandler(__AT_MQTT_CONNECT_SERVER_CMD + AT_SUBSCRIBE);
             if(commState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
