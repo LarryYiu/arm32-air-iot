@@ -17,8 +17,6 @@
 #define WIFI_USE_SMART_CONFIG false
 #endif
 
-#define DEBUG_PRINT_CWSTATE_RESPONSE true
-
 #if WIFI_USE_SMART_CONFIG
 static uint64_t __smartConfigStartsAt = 0;
 static bool __flagRestartSmartConfig  = false;
@@ -69,7 +67,7 @@ static WIFI_FSM_t wifiFsm = {.stateHandler = __WIFI_ConnectInternet};
 #define __AT_SNTPCFG_CMD "AT+CIPSNTPCFG=1," UTC(8) ",\"" SNTP_SERVER_1 "\",\"" SNTP_SERVER_2 "\"\r\n"
 #define __AT_SUBSCRIBE_CMD "AT+MQTTSUB=0,\"$sys/" MQTT_PRODUCT_ID "/" MQTT_DEVICE_NAME "/thing/property/set\",0\r\n"
 
-#if DEBUG_PRINT_CWSTATE_RESPONSE
+#if WIFI_USE_SMART_CONFIG
 
 static void __PrintCWStateResponse()
 {
@@ -230,7 +228,7 @@ static COMM_STATE_t __WIFI_SmartConfig(void)
             commState = AT_CmdHandler(__AT_CONFIG_WIFI_CMD + AT_WIFI_CONNECTION_CHECK);
             if(commState == COMM_STATE_OK)
             {
-#if DEBUG_PRINT_CWSTATE_RESPONSE
+#if WIFI_USE_SMART_CONFIG
                 __PrintCWStateResponse();
 #endif
                 AT_ClearResponseSnapshot();
@@ -273,7 +271,10 @@ static COMM_STATE_t __WIFI_ConnectInternet(void)
     switch(atCmd)
     {
         case AT_CWJAP_SSID_PWD:
-            commState = AT_CmdHandler(__AT_CONNECT_INTERNET_CMD + AT_CWJAP_SSID_PWD);
+            commState = AT_CmdHandler(__AT_CONNECT_INTERNET_CMD[AT_CWJAP_SSID_PWD].cmd,
+                                      __AT_CONNECT_INTERNET_CMD[AT_CWJAP_SSID_PWD].desiredResponse,
+                                      &__AT_CONNECT_INTERNET_CMD[AT_CWJAP_SSID_PWD].timeoutMs,
+                                      &__AT_CONNECT_INTERNET_CMD[AT_CWJAP_SSID_PWD].maxRetry);
             if(commState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
@@ -292,7 +293,10 @@ static COMM_STATE_t __WIFI_ConnectInternet(void)
             }
             break;
         case AT_CWJAP_DELAY:
-            commState = AT_CmdHandler(__AT_CONNECT_INTERNET_CMD + AT_CWJAP_DELAY);
+            commState = AT_CmdHandler(__AT_CONNECT_INTERNET_CMD[AT_CWJAP_DELAY].cmd,
+                                      __AT_CONNECT_INTERNET_CMD[AT_CWJAP_DELAY].desiredResponse,
+                                      &__AT_CONNECT_INTERNET_CMD[AT_CWJAP_DELAY].timeoutMs,
+                                      &__AT_CONNECT_INTERNET_CMD[AT_CWJAP_DELAY].maxRetry);
             if(commState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
@@ -359,7 +363,9 @@ static COMM_STATE_t __WIFI_ConnectMqttServer(void)
     switch(atCmd)
     {
         case AT_MQTTUSERCFG:
-            commState = AT_CmdHandler(__AT_CONNECT_SERVER_CMD + AT_MQTTUSERCFG);
+            commState = AT_CmdHandler(
+                __AT_CONNECT_SERVER_CMD[AT_MQTTUSERCFG].cmd, __AT_CONNECT_SERVER_CMD[AT_MQTTUSERCFG].desiredResponse,
+                &__AT_CONNECT_SERVER_CMD[AT_MQTTUSERCFG].timeoutMs, &__AT_CONNECT_SERVER_CMD[AT_MQTTUSERCFG].maxRetry);
             if(commState == COMM_STATE_OK)
             {
                 AT_ClearResponseSnapshot();
@@ -372,7 +378,9 @@ static COMM_STATE_t __WIFI_ConnectMqttServer(void)
             }
             break;
         case AT_MQTTCONN:
-            commState = AT_CmdHandler(__AT_CONNECT_SERVER_CMD + AT_MQTTCONN);
+            commState = AT_CmdHandler(
+                __AT_CONNECT_SERVER_CMD[AT_MQTTCONN].cmd, __AT_CONNECT_SERVER_CMD[AT_MQTTCONN].desiredResponse,
+                &__AT_CONNECT_SERVER_CMD[AT_MQTTCONN].timeoutMs, &__AT_CONNECT_SERVER_CMD[AT_MQTTCONN].maxRetry);
             if(commState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
@@ -392,7 +400,9 @@ static COMM_STATE_t __WIFI_ConnectMqttServer(void)
             }
             break;
         case AT_SNTPCFG:
-            commState = AT_CmdHandler(__AT_CONNECT_SERVER_CMD + AT_SNTPCFG);
+            commState = AT_CmdHandler(
+                __AT_CONNECT_SERVER_CMD[AT_SNTPCFG].cmd, __AT_CONNECT_SERVER_CMD[AT_SNTPCFG].desiredResponse,
+                &__AT_CONNECT_SERVER_CMD[AT_SNTPCFG].timeoutMs, &__AT_CONNECT_SERVER_CMD[AT_SNTPCFG].maxRetry);
             if(commState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
@@ -412,7 +422,9 @@ static COMM_STATE_t __WIFI_ConnectMqttServer(void)
             }
             break;
         case AT_SUBSCRIBE:
-            commState = AT_CmdHandler(__AT_CONNECT_SERVER_CMD + AT_SUBSCRIBE);
+            commState = AT_CmdHandler(
+                __AT_CONNECT_SERVER_CMD[AT_SUBSCRIBE].cmd, __AT_CONNECT_SERVER_CMD[AT_SUBSCRIBE].desiredResponse,
+                &__AT_CONNECT_SERVER_CMD[AT_SUBSCRIBE].timeoutMs, &__AT_CONNECT_SERVER_CMD[AT_SUBSCRIBE].maxRetry);
             if(commState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
@@ -594,7 +606,8 @@ static COMM_STATE_t __WIFI_CommIotServer(void)
     switch(atCmd)
     {
         case AT_LISTEN_SUB:
-            currCommState = AT_CmdHandler(__AT_BUSINESS_CMD + atCmd);
+            currCommState = AT_CmdHandler(__AT_BUSINESS_CMD[atCmd].cmd, __AT_BUSINESS_CMD[atCmd].desiredResponse,
+                                          &__AT_BUSINESS_CMD[atCmd].timeoutMs, &__AT_BUSINESS_CMD[atCmd].maxRetry);
             if(currCommState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
@@ -639,8 +652,8 @@ static COMM_STATE_t __WIFI_CommIotServer(void)
                 snprintf(cmdStrBuf, 256, __AT_BUSINESS_CMD[AT_REPLY_SUB].cmd, subTopicData.id);
             }
             currCommState =
-                _AT_CmdHandler(cmdStrBuf, __AT_BUSINESS_CMD[AT_REPLY_SUB].desiredResponse,
-                               __AT_BUSINESS_CMD[AT_REPLY_SUB].timeoutMs, __AT_BUSINESS_CMD[AT_REPLY_SUB].maxRetry);
+                AT_CmdHandler(cmdStrBuf, __AT_BUSINESS_CMD[AT_REPLY_SUB].desiredResponse,
+                              &__AT_BUSINESS_CMD[AT_REPLY_SUB].timeoutMs, &__AT_BUSINESS_CMD[AT_REPLY_SUB].maxRetry);
             if(currCommState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
@@ -676,7 +689,8 @@ static COMM_STATE_t __WIFI_CommIotServer(void)
                     lastSntpSysTime = SYSTICK_GetSysRunTime();
                 }
             }
-            currCommState = AT_CmdHandler(__AT_BUSINESS_CMD + atCmd);
+            currCommState = AT_CmdHandler(__AT_BUSINESS_CMD[atCmd].cmd, __AT_BUSINESS_CMD[atCmd].desiredResponse,
+                                          &__AT_BUSINESS_CMD[atCmd].timeoutMs, &__AT_BUSINESS_CMD[atCmd].maxRetry);
             if(currCommState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
@@ -732,9 +746,9 @@ static COMM_STATE_t __WIFI_CommIotServer(void)
                 }
             }
 
-            currCommState = _AT_CmdHandler(cmdStrBuf, __AT_BUSINESS_CMD[AT_MQTT_PUB_SENSOR_DATA].desiredResponse,
-                                           __AT_BUSINESS_CMD[AT_MQTT_PUB_SENSOR_DATA].timeoutMs,
-                                           __AT_BUSINESS_CMD[AT_MQTT_PUB_SENSOR_DATA].maxRetry);
+            currCommState = AT_CmdHandler(cmdStrBuf, __AT_BUSINESS_CMD[AT_MQTT_PUB_SENSOR_DATA].desiredResponse,
+                                          &__AT_BUSINESS_CMD[AT_MQTT_PUB_SENSOR_DATA].timeoutMs,
+                                          &__AT_BUSINESS_CMD[AT_MQTT_PUB_SENSOR_DATA].maxRetry);
 
             if(currCommState == COMM_STATE_OK)
             {

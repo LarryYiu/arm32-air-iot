@@ -16,16 +16,16 @@ struct AT_Cmd
 typedef enum COMM_STATE COMM_STATE_t;
 enum COMM_STATE
 {
-    COMM_STATE_IDLE,
+    COMM_STATE_IDLE = 0,
     COMM_STATE_OK,
+    COMM_STATE_DELAY_DONE,
     COMM_STATE_PROCESSING,
     COMM_STATE_FAILED_TIMER,
     COMM_STATE_FAILED_RESPONSE
 };
 
-COMM_STATE_t AT_CmdHandler(const AT_Cmd_t* cmd);
-COMM_STATE_t _AT_CmdHandler(char* cmd, char* desiredResponse, uint32_t timeoutMs, uint8_t maxRetry);
-
+COMM_STATE_t AT_CmdHandler(const char* cmd, const char* desiredResponse, const uint32_t* timeoutMs,
+                           const uint8_t* maxRetry);
 COMM_STATE_t AT_Init(void);
 
 char* AT_GetResponseSnapshot(void);

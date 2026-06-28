@@ -4,7 +4,7 @@
 #define WIFI_SSID "G16E_0563"
 #define WIFI_PWD "0iM325]3"
 
-#define WIFI_USE_SMART_CONFIG true
+#define WIFI_USE_SMART_CONFIG false
 #define SMART_CONFIG_WAITING_TIME_MS 40000UL
 
 #define MQTT_HOST "mqtts.heclouds.com"

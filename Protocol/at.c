@@ -3,6 +3,8 @@
 #include "systick.h"
 #include "esp8684_driver.h"
 #include "RTT_Debug.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #define DEBUG_PRINTING true
 
@@ -17,6 +19,140 @@ char* AT_GetResponseSnapshot(void)
     return __atResponseSnapshot;
 }
 
+static const char* __ASYNC_RESPONSE_LIST[] = {"CONNECTED", "DISCONNECT", "ready"};
+
+static bool __IsAsyncResponse(void)
+{
+    for(uint8_t i = 0; i < sizeof(__ASYNC_RESPONSE_LIST) / sizeof(__ASYNC_RESPONSE_LIST[0]); i++)
+    {
+        if(strstr(__atResponseSnapshot, __ASYNC_RESPONSE_LIST[i]) != NULL)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+typedef enum
+{
+    AT_RST,
+    AT_RST_WAIT,
+    AT_E0,
+    AT_CWMODE_1,
+} AT_INIT_CMD_INDEX_t;
+
+static const AT_Cmd_t __AT_INIT_CMD[] = {
+    [AT_RST] =
+        {
+            .cmd             = "AT+RST\r\n",
+            .desiredResponse = "OK",
+            .timeoutMs       = 500,
+            .maxRetry        = 3,
+        },
+    [AT_RST_WAIT] =
+        {
+            .cmd             = NULL,
+            .desiredResponse = "ready",
+            .timeoutMs       = 3000,
+            .maxRetry        = 0,
+        },
+    [AT_E0] =
+        {
+            .cmd             = "ATE0\r\n",
+            .desiredResponse = "OK",
+            .timeoutMs       = 500,
+            .maxRetry        = 3,
+        },
+    [AT_CWMODE_1] =
+        {
+            .cmd             = "AT+CWMODE=1\r\n",
+            .desiredResponse = "OK",
+            .timeoutMs       = 500,
+            .maxRetry        = 0,
+        },
+};
+
+#define __AT_INIT_CMD_COUNT (sizeof(__AT_INIT_CMD) / sizeof(__AT_INIT_CMD[0]))
+
+COMM_STATE_t AT_Init(void)
+{
+    uint8_t currentCmdIndex = 0;
+
+    while(currentCmdIndex < __AT_INIT_CMD_COUNT)
+    {
+        COMM_STATE_t state =
+            AT_CmdHandler(__AT_INIT_CMD[currentCmdIndex].cmd, __AT_INIT_CMD[currentCmdIndex].desiredResponse,
+                          &__AT_INIT_CMD[currentCmdIndex].timeoutMs, &__AT_INIT_CMD[currentCmdIndex].maxRetry);
+        if(state == COMM_STATE_OK || state == COMM_STATE_DELAY_DONE)
+        {
+            AT_ClearResponseSnapshot();
+            currentCmdIndex++;
+        }
+        else if(state == COMM_STATE_FAILED_TIMER || state == COMM_STATE_FAILED_RESPONSE)
+        {
+            AT_ClearResponseSnapshot();
+            return state;
+        }
+    }
+    AT_ClearResponseSnapshot();
+    return COMM_STATE_OK;
+}
+
+COMM_STATE_t AT_CmdHandler(const char* cmd, const char* desiredResponse, const uint32_t* timeoutMs,
+                           const uint8_t* maxRetry)
+{
+    if(!desiredResponse)
+    {
+        vTaskDelay(*timeoutMs);
+        return COMM_STATE_DELAY_DONE;
+    }
+    else
+    {
+        // send
+        if(cmd)
+            ESP8684_SendCommand(cmd);
+        // wait
+        uint32_t timeout = *timeoutMs;
+        uint8_t retry    = 0;
+        bool flagBusy    = false;
+        while((timeout + (flagBusy * AT_BUSY_DELAY_MS)) > 0)
+        {
+            if(ESP8684_IsPacketReceived())
+            {
+                if(__IsAsyncResponse())
+                {
+                    // do printing and stuffs
+                }
+                else if(strstr(__atResponseSnapshot, "busy") != NULL)
+                {
+                    flagBusy = true;
+                }
+                else if(strstr(__atResponseSnapshot, desiredResponse) != NULL)
+                {
+                    return COMM_STATE_OK;
+                }
+                else if(retry < *maxRetry)
+                {
+                    retry++;
+                    flagBusy = false;
+                    AT_ClearResponseSnapshot();
+                    if(cmd)
+                        ESP8684_SendCommand(cmd);
+                    timeout = 0;
+                }
+                else
+                {
+                    return COMM_STATE_FAILED_RESPONSE;
+                }
+            }
+            timeout--;
+            vTaskDelay(1);
+        }
+        return COMM_STATE_FAILED_TIMER;
+    }
+}
+
+#if 0
 typedef struct AT_FSM AT_FSM_t;
 struct AT_FSM
 {
@@ -102,19 +238,6 @@ static COMM_STATE_t __onWait(void)
     return COMM_STATE_PROCESSING;
 }
 
-static const char* __ASYNC_RESPONSE_LIST[] = {"CONNECTED", "DISCONNECT", "ready"};
-
-static bool __IsAsyncResponse(void)
-{
-    for(uint8_t i = 0; i < sizeof(__ASYNC_RESPONSE_LIST) / sizeof(__ASYNC_RESPONSE_LIST[0]); i++)
-    {
-        if(strstr(__atResponseSnapshot, __ASYNC_RESPONSE_LIST[i]) != NULL)
-        {
-            return true;
-        }
-    }
-    return false;
-}
 
 static COMM_STATE_t __onReceive(void)
 {
@@ -175,45 +298,6 @@ static COMM_STATE_t __onReceive(void)
         }
     }
 }
-
-typedef enum
-{
-    AT_RST,
-    AT_RST_WAIT,
-    AT_E0,
-    AT_CWMODE_1,
-} AT_INIT_CMD_INDEX_t;
-
-static const AT_Cmd_t __AT_INIT_CMD[] = {
-    [AT_RST] =
-        {
-            .cmd             = "AT+RST\r\n",
-            .desiredResponse = "OK",
-            .timeoutMs       = 500,
-            .maxRetry        = 3,
-        },
-    [AT_RST_WAIT] =
-        {
-            .cmd             = NULL,
-            .desiredResponse = "ready",
-            .timeoutMs       = 3000,
-            .maxRetry        = 0,
-        },
-    [AT_E0] =
-        {
-            .cmd             = "ATE0\r\n",
-            .desiredResponse = "OK",
-            .timeoutMs       = 500,
-            .maxRetry        = 3,
-        },
-    [AT_CWMODE_1] =
-        {
-            .cmd             = "AT+CWMODE=1\r\n",
-            .desiredResponse = "OK",
-            .timeoutMs       = 500,
-            .maxRetry        = 0,
-        },
-};
 
 COMM_STATE_t AT_Init(void)
 {
@@ -282,3 +366,4 @@ COMM_STATE_t AT_Init(void)
     }
     return COMM_STATE_PROCESSING;
 }
+#endif

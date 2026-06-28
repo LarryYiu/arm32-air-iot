@@ -47,12 +47,13 @@ void ShortPressListener(void)
 
     // FLASH_Erase(FLASH_SYS_PARAM_ADDR, FLASH_PAGE_SIZE);
 
-    WIFI_RestartSmartConfig();
+    // WIFI_RestartSmartConfig();
 }
 
 int main()
 {
     __enable_irq();
+    nvic_priority_group_set(NVIC_PRIGROUP_PRE4_SUB0); // for FreeRTOS
     LED_Config();
     DWT_Init();
     KEY_Config();
