@@ -3,7 +3,7 @@
 
 static uint64_t g_sysRunTime = 0;
 
-void SYSTICK_Config(void)
+void SYSTICK_Init(void)
 {
     SysTick_Config(rcu_clock_freq_get(CK_SYS) / 1000);
 }

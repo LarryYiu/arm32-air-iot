@@ -10,14 +10,13 @@
 #include "sht20_driver.h"
 #include "hk_a5_driver.h"
 #include "led_driver.h"
+#include "storage_app.h"
 
 #define DEBUG_PRINTING true
 
 #ifndef WIFI_USE_SMART_CONFIG
 #define WIFI_USE_SMART_CONFIG false
 #endif
-
-#define DEBUG_PRINT_CWSTATE_RESPONSE true
 
 #if WIFI_USE_SMART_CONFIG
 static uint64_t __smartConfigStartsAt = 0;
@@ -78,7 +77,7 @@ static WIFI_FSM_t wifiFsm = {.stateHandler = __WIFI_ConnectInternet};
 #define __IOT_SYS_VERSION_STR        "{\"s_version\":\"%s\", \"f_version\":\"1.0\"}"
 // clang-format on
 
-#if DEBUG_PRINT_CWSTATE_RESPONSE
+#if WIFI_USE_SMART_CONFIG
 static void __PrintCWStateResponse()
 {
     //+CWSTATE:<state>,<"ssid">
@@ -238,7 +237,7 @@ static COMM_STATE_t __WIFI_SmartConfig(void)
             commState = AT_CmdHandler(__AT_CONFIG_WIFI_CMD + AT_WIFI_CONNECTION_CHECK);
             if(commState == COMM_STATE_OK)
             {
-#if DEBUG_PRINT_CWSTATE_RESPONSE
+#if WIFI_USE_SMART_CONFIG
                 __PrintCWStateResponse();
 #endif
                 AT_ClearResponseSnapshot();

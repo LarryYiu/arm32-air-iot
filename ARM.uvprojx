@@ -464,6 +464,11 @@
               <FileType>1</FileType>
               <FilePath>.\Driver\internal_flash.c</FilePath>
             </File>
+            <File>
+              <FileName>app_driver.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Driver\app_driver.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

@@ -8,7 +8,7 @@
  * @brief Configure the key driver. This function initializes the GPIO pins for the keys and sets up the initial state
  * for each key.
  */
-void KEY_Config(void);
+void KEY_Init(void);
 
 /**
  * @brief Enable the key driver. This function configures the GPIO pins for the keys to be in input mode, allowing
@@ -21,7 +21,7 @@ void KEY_Enable(void);
 
 /**
  * @brief Disable the key driver. This function configures the GPIO pins for the keys to be in analog input mode
- * to reduces power consumption.
+ * to reduce power consumption.
  */
 void KEY_Disable(void);
 
