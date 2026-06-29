@@ -3,7 +3,7 @@
 static const uint8_t __LED_GPIO_LOOKUP[] = {LED_GPIO_LOOKUP};
 static Led_t __Leds[len(__LED_GPIO_LOOKUP)];
 
-void LED_Config(void)
+void LED_Init(void)
 {
     for(uint8_t i = 0; i < len(__LED_GPIO_LOOKUP); i++)
     {

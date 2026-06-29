@@ -32,7 +32,7 @@ typedef enum LedIndex LedIndex_t;
  * @brief  Configures LED GPIO.
  * **********************************************************************
  */
-void LED_Config(void);
+void LED_Init(void);
 
 /**
  * **********************************************************************

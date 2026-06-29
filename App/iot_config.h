@@ -8,6 +8,7 @@
 #define SMART_CONFIG_WAITING_TIME_MS 40000UL
 
 #define MQTT_HOST "mqtts.heclouds.com"
+#define HTTP_HOST "iot-api.heclouds.com"
 #define MQTT_PORT "1883"
 #define MQTT_DEVICE_NAME "GD32Air"
 #define MQTT_PRODUCT_ID "4m3RoDJR8n"

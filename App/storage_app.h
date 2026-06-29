@@ -23,4 +23,12 @@ void STORAGE_GetSysVersion(char* version);
 
 bool STORAGE_SetSysVersion(char* version);
 
+bool STORAGE_StoreDownloadContent(const char* content, uint32_t length);
+
+bool STORAGE_UpdateCurrFW(void);
+
+bool STORAGE_RollbackFW(void);
+
+bool STORAGE_BackupCurrFW(void);
+
 #endif // __STORAGE_APP_H__

@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-void SYSTICK_Config(void);
+void SYSTICK_Init(void);
 
 uint64_t SYSTICK_GetSysRunTime(void);
 
