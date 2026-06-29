@@ -19,9 +19,9 @@ enum COMM_STATE
     COMM_STATE_IDLE = 0,
     COMM_STATE_OK,
     COMM_STATE_DELAY_DONE,
-    COMM_STATE_PROCESSING,
     COMM_STATE_FAILED_TIMER,
-    COMM_STATE_FAILED_RESPONSE
+    COMM_STATE_FAILED_RESPONSE,
+    COMM_STATE_FAILED_HARDWARE,
 };
 
 COMM_STATE_t AT_CmdHandler(const char* cmd, const char* desiredResponse, const uint32_t* timeoutMs,

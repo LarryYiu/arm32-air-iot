@@ -23,6 +23,6 @@
 #define SNTP_SERVER_1 "cn.ntp.org.cn"
 #define SNTP_SERVER_2 "ntp.sjtu.edu.cn"
 
-#define SNTP_REQ_PERIOD_MS 3000
+#define SNTP_REQ_PERIOD_MS 3000UL
 
 #endif // __IOT_CONFIG_H__

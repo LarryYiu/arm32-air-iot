@@ -102,267 +102,102 @@ COMM_STATE_t AT_CmdHandler(const char* cmd, const char* desiredResponse, const u
 {
     if(!desiredResponse)
     {
+#if DEBUG_PRINTING
+        DBG_log("[AT] Delaying from cmd ...\n");
+#endif
         vTaskDelay(*timeoutMs);
+#if DEBUG_PRINTING
+        DBG_log("[AT] Delay Done\n");
+#endif
         return COMM_STATE_DELAY_DONE;
     }
     else
     {
-        // send
-        if(cmd)
-            ESP8684_SendCommand(cmd);
         // wait
         uint32_t timeout = *timeoutMs;
         uint8_t retry    = 0;
-        bool flagBusy    = false;
-        while((timeout + (flagBusy * AT_BUSY_DELAY_MS)) > 0)
+        while(retry <= *maxRetry)
         {
-            if(ESP8684_IsPacketReceived())
+            if(cmd)
             {
-                if(__IsAsyncResponse())
-                {
-                    // do printing and stuffs
-                }
-                else if(strstr(__atResponseSnapshot, "busy") != NULL)
-                {
-                    flagBusy = true;
-                }
-                else if(strstr(__atResponseSnapshot, desiredResponse) != NULL)
-                {
-                    return COMM_STATE_OK;
-                }
-                else if(retry < *maxRetry)
-                {
-                    retry++;
-                    flagBusy = false;
-                    AT_ClearResponseSnapshot();
-                    if(cmd)
-                        ESP8684_SendCommand(cmd);
-                    timeout = 0;
-                }
-                else
-                {
-                    return COMM_STATE_FAILED_RESPONSE;
-                }
+#if DEBUG_PRINTING
+                DBG_log("[AT] Sending Command: %s\n", cmd);
+#endif
+                ESP8684_SendCommand(cmd);
             }
-            timeout--;
-            vTaskDelay(1);
+            while(timeout > 0)
+            {
+                if(ESP8684_IsPacketReceived())
+                {
+                    ESP8684_SnapshotResponse(__atResponseSnapshot);
+                    if(__IsAsyncResponse())
+                    {
+#if DEBUG_PRINTING
+                        DBG_log("[AT] Async response: %s\n", __atResponseSnapshot);
+#endif
+                        if(strstr(__atResponseSnapshot, "ERROR") != NULL)
+                        {
+#if DEBUG_PRINTING
+                            DBG_log("[AT] Received ERROR \n");
+#endif
+                            AT_ClearResponseSnapshot();
+                            break;
+                        }
+                        else if(strstr(__atResponseSnapshot, desiredResponse) != NULL)
+                        {
+                            return COMM_STATE_OK;
+                        }
+                        else
+                        {
+                            AT_ClearResponseSnapshot();
+                            continue; // ignore async response and continue waiting for the desired response
+                        }
+                    }
+                    else if(strstr(__atResponseSnapshot, "busy") != NULL)
+                    {
+#if DEBUG_PRINTING
+                        DBG_log("[AT] Module Busy, delaying extra ...\n");
+#endif
+                        AT_ClearResponseSnapshot();
+                        vTaskDelay(pdMS_TO_TICKS(AT_BUSY_DELAY_MS));
+                    }
+                    else if(strstr(__atResponseSnapshot, desiredResponse) != NULL)
+                    {
+#if DEBUG_PRINTING
+                        DBG_log("[AT] Got expected response: %s\n", __atResponseSnapshot);
+#endif
+                        return COMM_STATE_OK;
+                    }
+                    else if(retry < *maxRetry)
+                    {
+#if DEBUG_PRINTING
+                        DBG_log("[AT] Unexpected response: %s\n", __atResponseSnapshot);
+                        DBG_log("[AT] Retry %d/%d\n", retry, *maxRetry);
+#endif
+                        retry++;
+                        AT_ClearResponseSnapshot();
+                        if(cmd)
+                        {
+#if DEBUG_PRINTING
+                            DBG_log("[AT] Sending Command: %s\n", cmd);
+#endif
+                            ESP8684_SendCommand(cmd);
+                        }
+                        timeout = *timeoutMs;
+                    }
+                    else
+                    {
+#if DEBUG_PRINTING
+                        DBG_log("[AT] Failed to get expected response\n");
+#endif
+                        return COMM_STATE_FAILED_RESPONSE;
+                    }
+                }
+                timeout--;
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
+            retry++;
         }
         return COMM_STATE_FAILED_TIMER;
     }
 }
-
-#if 0
-typedef struct AT_FSM AT_FSM_t;
-struct AT_FSM
-{
-    uint64_t sentCmdTime;
-    const AT_Cmd_t* currentCmd;
-    COMM_STATE_t (*stateHandler)(void);
-};
-
-static COMM_STATE_t __onSend(void);
-static bool __flagBusy = false;
-static COMM_STATE_t __onWait(void);
-static COMM_STATE_t __onReceive(void);
-
-static AT_FSM_t __atFSM = {0ULL, NULL, __onSend};
-
-COMM_STATE_t AT_CmdHandler(const AT_Cmd_t* cmd)
-{
-    __atFSM.currentCmd = cmd;
-    return __atFSM.stateHandler();
-}
-
-COMM_STATE_t _AT_CmdHandler(char* cmd, char* desiredResponse, uint32_t timeoutMs, uint8_t maxRetry)
-{
-    static AT_Cmd_t atCmd;
-    atCmd = (AT_Cmd_t){.cmd = cmd, .desiredResponse = desiredResponse, .timeoutMs = timeoutMs, .maxRetry = maxRetry};
-    __atFSM.currentCmd = &atCmd;
-    return __atFSM.stateHandler();
-}
-
-static COMM_STATE_t __onSend(void)
-{
-#if DEBUG_PRINTING
-    if(__atFSM.currentCmd->cmd)
-        DBG_log("[AT] Sending: [%s]\n", __atFSM.currentCmd->cmd);
-    else if(__atFSM.currentCmd->timeoutMs > 1)
-        DBG_log("[AT] Delaying\n");
-#endif
-    if(__atFSM.currentCmd->cmd != NULL)
-    {
-        ESP8684_SendCommand(__atFSM.currentCmd->cmd);
-    }
-    __atFSM.sentCmdTime  = xTaskGetTickCount();
-    __atFSM.stateHandler = __onWait;
-    return COMM_STATE_PROCESSING;
-}
-
-static COMM_STATE_t __onWait(void)
-{
-    static uint8_t retry = 0;
-    if(ESP8684_IsPacketReceived())
-    {
-        retry = 0;
-        ESP8684_SnapshotResponse(__atResponseSnapshot);
-        __atFSM.stateHandler = __onReceive;
-        return COMM_STATE_PROCESSING;
-    }
-    else if((xTaskGetTickCount() - __atFSM.sentCmdTime) >=
-            __atFSM.currentCmd->timeoutMs + __flagBusy * AT_BUSY_DELAY_MS)
-    {
-        __flagBusy           = false;
-        __atFSM.stateHandler = __onSend;
-        if(retry < __atFSM.currentCmd->maxRetry)
-        {
-#if DEBUG_PRINTING
-            DBG_log("[Error(retry) AT] Timeout [%s]\n", __atFSM.currentCmd->cmd ? __atFSM.currentCmd->cmd : "delay");
-#endif
-            retry++;
-            return COMM_STATE_PROCESSING;
-        }
-        else
-        {
-#if DEBUG_PRINTING
-            if(__atFSM.currentCmd->cmd)
-                DBG_log("[Error(fail) AT] Timeout [%s]\n", __atFSM.currentCmd->cmd);
-            else if(__atFSM.currentCmd->timeoutMs > 1)
-                DBG_log("[AT] Delay Done\n");
-#endif
-            retry              = 0;
-            __atFSM.currentCmd = NULL;
-            return COMM_STATE_FAILED_TIMER;
-        }
-    }
-    return COMM_STATE_PROCESSING;
-}
-
-
-static COMM_STATE_t __onReceive(void)
-{
-    static uint8_t retry = 0;
-    if(strstr(__atResponseSnapshot, __atFSM.currentCmd->desiredResponse) != NULL)
-    {
-#if DEBUG_PRINTING
-        DBG_log("[AT(success)] Receive matched[%s]\n", __atResponseSnapshot);
-#endif
-        __atFSM.stateHandler = __onSend;
-        retry                = 0;
-        return COMM_STATE_OK;
-    }
-    else if(strstr(__atResponseSnapshot, "busy") != NULL)
-    {
-#if DEBUG_PRINTING
-        DBG_log("[AT(busy)] Module is busy\n");
-#endif
-        __flagBusy           = true;
-        __atFSM.stateHandler = __onWait;
-        return COMM_STATE_PROCESSING;
-    }
-    else if(__IsAsyncResponse())
-    {
-#if DEBUG_PRINTING
-        DBG_log("[AT(waiting)] Recv Async Response [%s]\n", __atResponseSnapshot);
-#endif
-        __atFSM.stateHandler = __onWait;
-        return COMM_STATE_PROCESSING;
-    }
-    else
-    {
-#if DEBUG_PRINTING
-        DBG_log("[Error(log) AT] Received: [%s], expected: [%s]\n", __atResponseSnapshot,
-                __atFSM.currentCmd->desiredResponse);
-#endif
-        __atFSM.stateHandler = __onSend;
-        if(retry < __atFSM.currentCmd->maxRetry)
-        {
-#if DEBUG_PRINTING
-            if(__atFSM.currentCmd->timeoutMs > 1)
-                DBG_log("[Error(retry) AT] unmatched response [%s]\n",
-                        __atFSM.currentCmd->cmd ? __atFSM.currentCmd->cmd : "delay");
-#endif
-            retry++;
-            return COMM_STATE_PROCESSING;
-        }
-        else
-        {
-#if DEBUG_PRINTING
-            if(__atFSM.currentCmd->timeoutMs > 1)
-                DBG_log("[Error(fail) AT] unmatched response [%s]\n",
-                        __atFSM.currentCmd->cmd ? __atFSM.currentCmd->cmd : "delay");
-#endif
-            retry              = 0;
-            __atFSM.currentCmd = NULL;
-            return COMM_STATE_FAILED_RESPONSE;
-        }
-    }
-}
-
-COMM_STATE_t AT_Init(void)
-{
-    COMM_STATE_t commState           = COMM_STATE_PROCESSING;
-    static AT_INIT_CMD_INDEX_t atCmd = AT_RST;
-
-    switch(atCmd)
-    {
-        case AT_RST:
-            commState = AT_CmdHandler(__AT_INIT_CMD + AT_RST);
-            if(commState == COMM_STATE_OK)
-            {
-                AT_ClearResponseSnapshot();
-                atCmd = AT_RST_WAIT;
-            }
-            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
-            {
-                AT_ClearResponseSnapshot();
-                return commState;
-            }
-            break;
-        case AT_RST_WAIT:
-            commState = AT_CmdHandler(__AT_INIT_CMD + AT_RST_WAIT);
-            if(commState == COMM_STATE_OK)
-            {
-                AT_ClearResponseSnapshot();
-                atCmd = AT_E0;
-            }
-            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
-            {
-                AT_ClearResponseSnapshot();
-                atCmd = AT_E0;
-            }
-            break;
-        case AT_E0:
-            commState = AT_CmdHandler(__AT_INIT_CMD + AT_E0);
-            if(commState == COMM_STATE_OK)
-            {
-                AT_ClearResponseSnapshot();
-                atCmd = AT_CWMODE_1;
-            }
-            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
-            {
-                AT_ClearResponseSnapshot();
-                atCmd = AT_RST;
-                return commState;
-            }
-            break;
-        case AT_CWMODE_1:
-            commState = AT_CmdHandler(__AT_INIT_CMD + AT_CWMODE_1);
-            if(commState == COMM_STATE_OK)
-            {
-                AT_ClearResponseSnapshot();
-                atCmd = AT_RST;
-                return COMM_STATE_OK;
-            }
-            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
-            {
-                AT_ClearResponseSnapshot();
-                atCmd = AT_RST;
-                return commState;
-            }
-            break;
-        default:
-            break;
-    }
-    return COMM_STATE_PROCESSING;
-}
-#endif
