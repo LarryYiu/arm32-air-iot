@@ -2,8 +2,11 @@
 #include "key_driver.h"
 #include "gd32f30x.h"
 #include "config.h"
-#include "systick.h"
 #include "gpio_decoder.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "RTT_Debug.h"
 
 #ifndef KEY_GPIO_FREQENCY
 #define KEY_GPIO_FREQENCY GPIO_OSPEED_2MHZ
@@ -180,7 +183,7 @@ static void __OnReleasedState(Key_t* key)
 {
     if(key->isPressing && key->isTriggerOnRelease)
     {
-        uint64_t now = SYSTICK_GetSysRunTime();
+        uint64_t now = xTaskGetTickCount();
         if(now - key->lastReleasedAt >= KEY_CONTINUOUS_PRESS_THRESHOLD_MS)
         {
             key->lastReleasedAt = 0;
@@ -217,23 +220,17 @@ static void __OnReleasedState(Key_t* key)
  */
 static void __OnDebounceState(Key_t* key)
 {
-    if(SYSTICK_GetSysRunTime() - key->pressedAt <= KEY_DEBOUNCE_TIME_MS)
+    vTaskDelay(pdMS_TO_TICKS(KEY_DEBOUNCE_TIME_MS));
+    if(__IsNowPressing(key))
     {
-        return;
+        key->isPressing   = true;
+        key->pressedAt    = xTaskGetTickCount();
+        key->stateHandler = __OnPressedState;
     }
     else
     {
-        if(__IsNowPressing(key))
-        {
-            key->isPressing   = true;
-            key->pressedAt    = SYSTICK_GetSysRunTime();
-            key->stateHandler = __OnPressedState;
-        }
-        else
-        {
-            key->isPressing   = false;
-            key->stateHandler = __OnReleasedState;
-        }
+        key->isPressing   = false;
+        key->stateHandler = __OnReleasedState;
     }
 }
 
@@ -252,7 +249,7 @@ static void __OnPressedState(Key_t* key)
     }
     else
     {
-        uint64_t now = SYSTICK_GetSysRunTime();
+        uint64_t now = xTaskGetTickCount();
         if(__IsNowPressing(key))
         {
             if(now - key->pressedAt >= KEY_LONG_PRESS_THRESHOLD_MS)
@@ -278,7 +275,7 @@ static void __OnLongPressedState(Key_t* key)
 {
     if(!__IsNowPressing(key))
     {
-        uint64_t now            = SYSTICK_GetSysRunTime();
+        uint64_t now            = xTaskGetTickCount();
         key->isShortPressCalled = false;
         key->isLongPressCalled  = false;
         key->lastReleasedAt     = now;
@@ -299,4 +296,27 @@ static void __OnLongPressedState(Key_t* key)
             key->isLongPressCalled = true;
         }
     }
+}
+
+void __KEY_RTOS_Task(void* arg)
+{
+    while(1)
+    {
+        if(arg == NULL)
+        {
+            KEY_Scan(0);
+        }
+        else
+        {
+            uint8_t keyIndex = *((uint8_t*)arg);
+            KEY_Scan(keyIndex);
+        }
+    }
+}
+
+void KEY_RTOS_Init(void)
+{
+    BaseType_t ret = xTaskCreate(__KEY_RTOS_Task, "key", 512, NULL, tskIDLE_PRIORITY + 1, NULL);
+
+    configASSERT(ret == pdPASS);
 }

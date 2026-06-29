@@ -87,4 +87,6 @@ void KEY_RemoveContinuousPressListener(uint8_t keyIndex);
  */
 void KEY_Scan(uint8_t keyIndex);
 
+void KEY_RTOS_Init(void);
+
 #endif // __KEY_DRV_H__

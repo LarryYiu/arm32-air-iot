@@ -4,13 +4,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include "at.h"
-#include "systick.h"
 #include "rtc.h"
 #include "RTT_Debug.h"
 #include "sht20_driver.h"
 #include "hk_a5_driver.h"
 #include "led_driver.h"
 #include "storage_app.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
 
 #define DEBUG_PRINTING true
 
@@ -25,7 +27,7 @@ static bool __flagRestartSmartConfig  = false;
 bool WIFI_IsSmartConfigTimedOut(void)
 {
 #if false
-    uint64_t sysRuntime = SYSTICK_GetSysRunTime();
+    uint64_t sysRuntime = xTaskGetTickCount();
     if((sysRuntime - __smartConfigStartsAt) % 1000 == 0)
     {
         DBG_log("[WIFI Smart CD] %d sec\n",
@@ -33,7 +35,7 @@ bool WIFI_IsSmartConfigTimedOut(void)
     }
     return (sysRuntime - __smartConfigStartsAt > SMART_CONFIG_WAITING_TIME_MS);
 #else
-    return (SYSTICK_GetSysRunTime() - __smartConfigStartsAt > SMART_CONFIG_WAITING_TIME_MS);
+    return (xTaskGetTickCount() - __smartConfigStartsAt > SMART_CONFIG_WAITING_TIME_MS);
 #endif
 }
 
@@ -51,7 +53,6 @@ static COMM_STATE_t __WIFI_ConnectInternet(void);
 
 static COMM_STATE_t __WIFI_ConnectMqttServer(void);
 static COMM_STATE_t __WIFI_CommIotServer(void);
-static COMM_STATE_t __WIFI_ConnectOtaServer(void);
 
 typedef struct WIFI_FSM WIFI_FSM_t;
 struct WIFI_FSM
@@ -138,7 +139,7 @@ static COMM_STATE_t __WIFI_SmartConfig(void)
                 DBG_log("[WIFI Smart] Smart Config Started\n");
 #endif
                 AT_ClearResponseSnapshot();
-                __smartConfigStartsAt = SYSTICK_GetSysRunTime();
+                __smartConfigStartsAt = xTaskGetTickCount();
                 atCmd                 = AT_SMART_CONFIG_DELAY;
                 return COMM_STATE_OK;
             }
@@ -338,107 +339,6 @@ static COMM_STATE_t __WIFI_ConnectInternet(void)
 6. set the update flag to 1 then reset the system
 */
 
-static char __httpPostBuf[500];
-typedef enum
-{
-    AT_OTA_CONNECT_SERVER = 0,
-    AT_OTA_CHECK_CONNECTION,
-    AT_INTIT_VERSION_UPLOAD,
-    AT_UPLOAD_CURR_VERSION,
-
-} AT_OTA_CONNECT_INDEX_t;
-
-static const AT_Cmd_t __AT_OTA_CONNECT_SERVER_CMD[] = {
-    [AT_OTA_CONNECT_SERVER]   = {.cmd             = __AT_CONNECT_OTA_CMD,
-                                 .desiredResponse = "CONNECT",
-                                 .timeoutMs       = 5000,
-                                 .maxRetry        = 3},
-    [AT_OTA_CHECK_CONNECTION] = {.cmd             = __AT_OTA_CONNECTION_CHECK_CMD,
-                                 .desiredResponse = "OK",
-                                 .timeoutMs       = 5000,
-                                 .maxRetry        = 3},
-    [AT_INTIT_VERSION_UPLOAD] = {.cmd             = __AT_INIT_VERSION_UPLOAD_CMD,
-                                 .desiredResponse = ">",
-                                 .timeoutMs       = 5000,
-                                 .maxRetry        = 0},
-    [AT_UPLOAD_CURR_VERSION]  = {.cmd             = __AT_OTA_VERSION_UPLOAD_CMD,
-                                 .desiredResponse = "succ",
-                                 .timeoutMs       = 10000,
-                                 .maxRetry        = 0}};
-
-static COMM_STATE_t __WIFI_ConnectOtaServer(void)
-{
-    COMM_STATE_t commState;
-    static AT_OTA_CONNECT_INDEX_t atCmd = AT_OTA_CONNECT_SERVER;
-    char __cmdBuffer[50];
-    uint16_t strLen = 0;
-
-    switch(atCmd)
-    {
-        case AT_OTA_CONNECT_SERVER:
-            commState = AT_CmdHandler(__AT_OTA_CONNECT_SERVER_CMD + AT_OTA_CONNECT_SERVER);
-            if(commState == COMM_STATE_OK)
-            {
-                AT_ClearResponseSnapshot();
-                atCmd = AT_OTA_CHECK_CONNECTION;
-                return COMM_STATE_OK;
-            }
-            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
-            {
-                AT_ClearResponseSnapshot();
-                return commState;
-            }
-            break;
-        case AT_OTA_CHECK_CONNECTION:
-            commState = AT_CmdHandler(__AT_OTA_CONNECT_SERVER_CMD + AT_OTA_CHECK_CONNECTION);
-            if(commState == COMM_STATE_OK)
-            {
-                AT_ClearResponseSnapshot();
-                char versionStr[50] = {0};
-                STORAGE_GetSysVersion(__cmdBuffer); // borrow the cmdBuffer to store the version string
-                /* "{\"s_version\":\"[real version]\", \"f_version\":\"[does not matter , leave 1.0]\"}" */
-                sprintf(versionStr, __IOT_SYS_VERSION_STR, __cmdBuffer);
-                strLen = strlen(versionStr);
-                memset(__httpPostBuf, 0, sizeof(__httpPostBuf));
-                sprintf(__httpPostBuf, __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].cmd, strLen, versionStr);
-                atCmd = AT_INTIT_VERSION_UPLOAD;
-                return COMM_STATE_OK;
-            }
-            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
-            {
-                AT_ClearResponseSnapshot();
-                atCmd = AT_OTA_CONNECT_SERVER;
-                return commState;
-            }
-            break;
-        case AT_INTIT_VERSION_UPLOAD:
-            sprintf(__cmdBuffer, __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].cmd, strLen);
-            commState =
-                _AT_CmdHandler(__cmdBuffer, __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].desiredResponse,
-                               __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].timeoutMs,
-                               __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].maxRetry);
-            if(commState == COMM_STATE_OK)
-            {
-                AT_ClearResponseSnapshot();
-                atCmd = AT_UPLOAD_CURR_VERSION;
-                return COMM_STATE_OK;
-            }
-            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
-            {
-                AT_ClearResponseSnapshot();
-                atCmd = AT_OTA_CONNECT_SERVER;
-                return commState;
-            }
-            break;
-        case AT_UPLOAD_CURR_VERSION:
-            // TODO: upload the current version string to the OTA server
-            break;
-        default:
-            break;
-    }
-    return COMM_STATE_PROCESSING;
-}
-
 /* OTA Handler Ends */
 
 typedef enum
@@ -470,8 +370,8 @@ static COMM_STATE_t __WIFI_ConnectMqttServer(void)
     {
         case AT_MQTTUSERCFG:
             commState = AT_CmdHandler(
-                __AT_CONNECT_SERVER_CMD[AT_MQTTUSERCFG].cmd, __AT_CONNECT_SERVER_CMD[AT_MQTTUSERCFG].desiredResponse,
-                &__AT_CONNECT_SERVER_CMD[AT_MQTTUSERCFG].timeoutMs, &__AT_CONNECT_SERVER_CMD[AT_MQTTUSERCFG].maxRetry);
+                __AT_MQTT_CONNECT_SERVER_CMD[AT_MQTTUSERCFG].cmd, __AT_MQTT_CONNECT_SERVER_CMD[AT_MQTTUSERCFG].desiredResponse,
+                &__AT_MQTT_CONNECT_SERVER_CMD[AT_MQTTUSERCFG].timeoutMs, &__AT_MQTT_CONNECT_SERVER_CMD[AT_MQTTUSERCFG].maxRetry);
             if(commState == COMM_STATE_OK)
             {
                 AT_ClearResponseSnapshot();
@@ -485,8 +385,8 @@ static COMM_STATE_t __WIFI_ConnectMqttServer(void)
             break;
         case AT_MQTTCONN:
             commState = AT_CmdHandler(
-                __AT_CONNECT_SERVER_CMD[AT_MQTTCONN].cmd, __AT_CONNECT_SERVER_CMD[AT_MQTTCONN].desiredResponse,
-                &__AT_CONNECT_SERVER_CMD[AT_MQTTCONN].timeoutMs, &__AT_CONNECT_SERVER_CMD[AT_MQTTCONN].maxRetry);
+                __AT_MQTT_CONNECT_SERVER_CMD[AT_MQTTCONN].cmd, __AT_MQTT_CONNECT_SERVER_CMD[AT_MQTTCONN].desiredResponse,
+                &__AT_MQTT_CONNECT_SERVER_CMD[AT_MQTTCONN].timeoutMs, &__AT_MQTT_CONNECT_SERVER_CMD[AT_MQTTCONN].maxRetry);
             if(commState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
@@ -507,8 +407,8 @@ static COMM_STATE_t __WIFI_ConnectMqttServer(void)
             break;
         case AT_SNTPCFG:
             commState = AT_CmdHandler(
-                __AT_CONNECT_SERVER_CMD[AT_SNTPCFG].cmd, __AT_CONNECT_SERVER_CMD[AT_SNTPCFG].desiredResponse,
-                &__AT_CONNECT_SERVER_CMD[AT_SNTPCFG].timeoutMs, &__AT_CONNECT_SERVER_CMD[AT_SNTPCFG].maxRetry);
+                __AT_MQTT_CONNECT_SERVER_CMD[AT_SNTPCFG].cmd, __AT_MQTT_CONNECT_SERVER_CMD[AT_SNTPCFG].desiredResponse,
+                &__AT_MQTT_CONNECT_SERVER_CMD[AT_SNTPCFG].timeoutMs, &__AT_MQTT_CONNECT_SERVER_CMD[AT_SNTPCFG].maxRetry);
             if(commState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
@@ -529,8 +429,8 @@ static COMM_STATE_t __WIFI_ConnectMqttServer(void)
             break;
         case AT_SUBSCRIBE:
             commState = AT_CmdHandler(
-                __AT_CONNECT_SERVER_CMD[AT_SUBSCRIBE].cmd, __AT_CONNECT_SERVER_CMD[AT_SUBSCRIBE].desiredResponse,
-                &__AT_CONNECT_SERVER_CMD[AT_SUBSCRIBE].timeoutMs, &__AT_CONNECT_SERVER_CMD[AT_SUBSCRIBE].maxRetry);
+                __AT_MQTT_CONNECT_SERVER_CMD[AT_SUBSCRIBE].cmd, __AT_MQTT_CONNECT_SERVER_CMD[AT_SUBSCRIBE].desiredResponse,
+                &__AT_MQTT_CONNECT_SERVER_CMD[AT_SUBSCRIBE].timeoutMs, &__AT_MQTT_CONNECT_SERVER_CMD[AT_SUBSCRIBE].maxRetry);
             if(commState == COMM_STATE_OK)
             {
 #if DEBUG_PRINTING
@@ -782,7 +682,7 @@ static COMM_STATE_t __WIFI_CommIotServer(void)
         case AT_SNTPTIME:
             if(currCommState != COMM_STATE_PROCESSING)
             {
-                if((SYSTICK_GetSysRunTime() - lastSntpSysTime) < SNTP_REQ_PERIOD_MS)
+                if((xTaskGetTickCount() - lastSntpSysTime) < SNTP_REQ_PERIOD_MS)
                 {
                     atCmd = __IncrementAtBusinessCmd(atCmd);
                     break;
@@ -792,7 +692,7 @@ static COMM_STATE_t __WIFI_CommIotServer(void)
 #if DEBUG_PRINTING
                     DBG_log("[WIFI] Period request Time\n");
 #endif
-                    lastSntpSysTime = SYSTICK_GetSysRunTime();
+                    lastSntpSysTime = xTaskGetTickCount();
                 }
             }
             currCommState = AT_CmdHandler(__AT_BUSINESS_CMD[atCmd].cmd, __AT_BUSINESS_CMD[atCmd].desiredResponse,
@@ -820,7 +720,7 @@ static COMM_STATE_t __WIFI_CommIotServer(void)
         case AT_MQTT_PUB_SENSOR_DATA:
             if(currCommState != COMM_STATE_PROCESSING)
             {
-                if((SYSTICK_GetSysRunTime() - lastPubSysTime) < MQTT_DAT_UPLOAD_PERIOD_MS)
+                if((xTaskGetTickCount() - lastPubSysTime) < MQTT_DAT_UPLOAD_PERIOD_MS)
                 {
                     atCmd = __IncrementAtBusinessCmd(atCmd);
                     break;
@@ -830,7 +730,7 @@ static COMM_STATE_t __WIFI_CommIotServer(void)
 #if DEBUG_PRINTING
                     DBG_log("[WIFI] Period request Sensor Data\n");
 #endif
-                    lastPubSysTime = SYSTICK_GetSysRunTime();
+                    lastPubSysTime = xTaskGetTickCount();
                     if(SHT20_IsUpdated() || HK_A5_IsPm25ValueUpdated())
                     {
 #if DEBUG_PRINTING
@@ -845,7 +745,7 @@ static COMM_STATE_t __WIFI_CommIotServer(void)
 #if DEBUG_PRINTING
                         DBG_log("[WIFI] Sensor Data not detected\n");
 #endif
-                        lastPubSysTime = SYSTICK_GetSysRunTime();
+                        lastPubSysTime = xTaskGetTickCount();
                         atCmd          = __IncrementAtBusinessCmd(atCmd);
                         break;
                     }

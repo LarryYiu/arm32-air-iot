@@ -1,8 +1,10 @@
 #include "hk_a5_driver.h"
 #include "uart.h"
 #include "config.h"
-#include "systick.h"
 #include "RTT_Debug.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
 
 #define DEBUG_LOG true
 
@@ -38,7 +40,7 @@ void HK_A5_Enable(void)
 {
     __PA6_SET();
     __state   = HKA5_STATE_READ;
-    __timeout = SYSTICK_GetSysRunTime();
+    __timeout = xTaskGetTickCount();
 }
 
 void HK_A5_Disable(void)
@@ -115,7 +117,7 @@ void HK_A5_Run(void)
         case HKA5_STATE_READ:
             if(!UART_IsDataReady())
             {
-                if(SYSTICK_GetSysRunTime() - __timeout > HK_A5_NO_DATA_TIMEOUT_MS)
+                if(xTaskGetTickCount() - __timeout > HK_A5_NO_DATA_TIMEOUT_MS)
                 {
 #if (DEBUG_LOG)
                     DBG_log("[HK_A5] No data received for a while, turning off HK-A5.\n");
@@ -139,7 +141,7 @@ void HK_A5_Run(void)
 #if (DEBUG_LOG)
                 DBG_log("[HK_A5] Data validation failed, retrying\n");
 #endif
-                __timeout = SYSTICK_GetSysRunTime();
+                __timeout = xTaskGetTickCount();
                 __state   = HKA5_STATE_READ;
             }
             break;
@@ -150,12 +152,12 @@ void HK_A5_Run(void)
             // uint16_t partical25 =
             //     (uint16_t)dataSnapshot[__INDEX_PARTICAL25_H] << 8 | dataSnapshot[__INDEX_PARTICAL25_L];
             // DBG_log("[HK_A5] PM2.5: %d ug/m3, Partical 2.5: %d ug/m3\n", pm25, partical25);
-            // __timeout = SYSTICK_GetSysRunTime();
+            // __timeout = xTaskGetTickCount();
             // __state   = HKA5_STATE_READ;
 
             __pm25Value          = (uint16_t)dataSnapshot[__INDEX_PM25_H] << 8 | dataSnapshot[__INDEX_PM25_L];
             __isPm25ValueUpdated = true;
-            __timeout            = SYSTICK_GetSysRunTime();
+            __timeout            = xTaskGetTickCount();
             __state              = HKA5_STATE_READ;
         }
         break;

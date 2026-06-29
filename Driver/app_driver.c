@@ -7,7 +7,6 @@
 #include "led_driver.h"
 #include "key_driver.h"
 #include "dwt_delay.h"
-#include "systick.h"
 #include "sht20_driver.h"
 #include "RTT_Debug.h"
 #include "hk_a5_driver.h"
@@ -50,7 +49,8 @@ void ShortPressListener(void)
     // FLASH_Erase(FLASH_SYS_PARAM_ADDR, FLASH_PAGE_SIZE);
 
     // WIFI_RestartSmartConfig();
-    DBG_log("[KEY] Short press detected\n");
+    // DBG_log("[KEY] Short press detected\n");
+    LED_Toggle(0);
 }
 
 void APP_Init(void)
@@ -65,7 +65,7 @@ void APP_Init(void)
     BAT_Init();
     RTC_Init();
     ESP8684_Init();
-    SYSTICK_Init();
+    // SYSTICK_Init(); // SYSTICK is initialized in FreeRTOS
     STORAGE_Init();
     HK_A5_Disable();
 
@@ -76,7 +76,7 @@ void APP_Init(void)
 
 void APP_Run(void)
 {
-    KEY_Scan(0);
+    // KEY_Scan(0);
     // SHT20_Run();
     // HK_A5_Run();
     // WIFI_Run();

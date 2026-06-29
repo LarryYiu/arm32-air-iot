@@ -399,16 +399,16 @@
               <FileType>1</FileType>
               <FilePath>.\App\storage_app.c</FilePath>
             </File>
+            <File>
+              <FileName>task_manager.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\App\task_manager.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
           <GroupName>Driver</GroupName>
           <Files>
-            <File>
-              <FileName>systick.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\Driver\systick.c</FilePath>
-            </File>
             <File>
               <FileName>gpio_decoder.c</FileName>
               <FileType>1</FileType>

@@ -5,7 +5,9 @@
 #include "gpio_decoder.h"
 #include "dwt_delay.h"
 #include "RTT_Debug.h"
-#include "systick.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
 
 #define __SCL_PORT GPIO_GetPeriphAddr(SHT20_SCL_PIN)
 #define __SCL_PIN GPIO_GetPinAddr(SHT20_SCL_PIN)
@@ -340,13 +342,13 @@ void SHT20_Run(void)
             if(__isMeasuringTemp)
             {
                 __lastTemp          = __InterpretTemp(msb, lsb);
-                __lastTempUpdatedAt = SYSTICK_GetSysRunTime();
+                __lastTempUpdatedAt = xTaskGetTickCount();
                 __tempUpdated       = true;
             }
             else
             {
                 __lastHumidity          = __InterpretHumidity(msb, lsb);
-                __lastHumidityUpdatedAt = SYSTICK_GetSysRunTime();
+                __lastHumidityUpdatedAt = xTaskGetTickCount();
                 __humidityUpdated       = true;
             }
             __isMeasuringTemp = !__isMeasuringTemp;
@@ -367,7 +369,7 @@ float SHT20_GetTemp(bool handleError)
     }
     else
     {
-        if(SYSTICK_GetSysRunTime() - __lastTempUpdatedAt > SHT20_ERROR_TIMEOUT_MS)
+        if(xTaskGetTickCount() - __lastTempUpdatedAt > SHT20_ERROR_TIMEOUT_MS)
         {
             DBG_log("[SHT20 Error] Temperature reading timeout.\n");
             return NAN;
@@ -392,7 +394,7 @@ float SHT20_GetHumidity(bool handleError)
     }
     else
     {
-        if(SYSTICK_GetSysRunTime() - __lastHumidityUpdatedAt > SHT20_ERROR_TIMEOUT_MS)
+        if(xTaskGetTickCount() - __lastHumidityUpdatedAt > SHT20_ERROR_TIMEOUT_MS)
         {
             DBG_log("[SHT20 Error] Humidity reading timeout.\n");
             return NAN;

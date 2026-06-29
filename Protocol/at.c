@@ -1,6 +1,5 @@
 #include "at.h"
 #include <string.h>
-#include "systick.h"
 #include "esp8684_driver.h"
 #include "RTT_Debug.h"
 #include "FreeRTOS.h"
@@ -194,7 +193,7 @@ static COMM_STATE_t __onSend(void)
     {
         ESP8684_SendCommand(__atFSM.currentCmd->cmd);
     }
-    __atFSM.sentCmdTime  = SYSTICK_GetSysRunTime();
+    __atFSM.sentCmdTime  = xTaskGetTickCount();
     __atFSM.stateHandler = __onWait;
     return COMM_STATE_PROCESSING;
 }
@@ -209,7 +208,7 @@ static COMM_STATE_t __onWait(void)
         __atFSM.stateHandler = __onReceive;
         return COMM_STATE_PROCESSING;
     }
-    else if((SYSTICK_GetSysRunTime() - __atFSM.sentCmdTime) >=
+    else if((xTaskGetTickCount() - __atFSM.sentCmdTime) >=
             __atFSM.currentCmd->timeoutMs + __flagBusy * AT_BUSY_DELAY_MS)
     {
         __flagBusy           = false;

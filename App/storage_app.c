@@ -15,7 +15,7 @@
 #define VERSION_LEN 10
 #define MAGIC_CODE_LEN 4
 
-#define DEBUG_PRINT true
+#define DEBUG_PRINT false
 
 static const SysParam_t __SYS_PARAM_DEFAULT = {.magicCode = STORE_MAGIC_CODE,
                                                .version   = "default",

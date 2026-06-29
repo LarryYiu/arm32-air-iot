@@ -1,6 +1,5 @@
 #include "battery_lvl.h"
 #include "gd32f30x.h"
-#include "systick.h"
 #include "dwt_delay.h"
 #include "RTT_Debug.h"
 
