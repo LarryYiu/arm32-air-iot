@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "FreeRTOS.h"
+#include "semphr.h"
 
 void ESP8684_Init(void);
 
@@ -10,7 +12,11 @@ void ESP8684_EnableModule(void);
 
 void ESP8684_DisableModule(void);
 
-bool ESP8684_IsPacketReceived(void);
+BaseType_t ESP8684_WaitForPacketSemaphore(void);
+
+void ESP8684_LockUART(void);
+
+void ESP8684_UnlockUART(void);
 
 void ESP8684_SendCommand(const char* cmd);
 

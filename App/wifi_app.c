@@ -79,7 +79,10 @@ typedef enum
 
 static const AT_Cmd_t __AT_CONFIG_WIFI_CMD[] = {
     [AT_START_SMART_CONFIG] = {.cmd = "AT+CWSTARTSMART\r\n", .desiredResponse = "OK", .timeoutMs = 1000, .maxRetry = 3},
-    [AT_SMART_CONFIG_DELAY] = {.cmd = NULL, .desiredResponse = "GOT IP", .timeoutMs = 30000, .maxRetry = 0},
+    [AT_SMART_CONFIG_DELAY] = {.cmd             = NULL,
+                               .desiredResponse = "GOT IP",
+                               .timeoutMs       = SMART_CONFIG_WAITING_TIME_MS,
+                               .maxRetry        = 0},
     [AT_REPLY_APP_DELAY]    = {.cmd = NULL, .desiredResponse = NULL, .timeoutMs = 6000, .maxRetry = 0},
     [AT_STOP_SMART_CONFIG]  = {.cmd = "AT+CWSTOPSMART\r\n", .desiredResponse = "OK", .timeoutMs = 1000, .maxRetry = 3},
     [AT_WIFI_CONNECTION_CHECK] = {.cmd = "AT+CWSTATE?\r\n", .desiredResponse = ":2", .timeoutMs = 1000, .maxRetry = 3}};
@@ -88,23 +91,18 @@ static const AT_Cmd_t __AT_CONFIG_WIFI_CMD[] = {
 static COMM_STATE_t __WIFI_SmartConfig(void)
 {
     COMM_STATE_t commState;
-    uint8_t currentCmdIndex       = 0;
-    uint64_t smartConfigStartTime = xTaskGetTickCount();
+    uint8_t currentCmdIndex = 0;
 
     while(currentCmdIndex < __AT_CONFIG_WIFI_CMD_COUNT)
     {
-        if(xTaskGetTickCount() - smartConfigStartTime > SMART_CONFIG_WAITING_TIME_MS)
-        {
-            DBG_log("[WIFI Smart] Smart Config Timeout\n");
-            goto STOP_SMART_CONFIG;
-        }
         commState = AT_CmdHandler(
             __AT_CONFIG_WIFI_CMD[currentCmdIndex].cmd, __AT_CONFIG_WIFI_CMD[currentCmdIndex].desiredResponse,
             &__AT_CONFIG_WIFI_CMD[currentCmdIndex].timeoutMs, &__AT_CONFIG_WIFI_CMD[currentCmdIndex].maxRetry);
         if(commState == COMM_STATE_OK || commState == COMM_STATE_DELAY_DONE)
         {
 #if DEBUG_PRINTING
-            __PrintCWStateResponse();
+            if(currentCmdIndex == AT_WIFI_CONNECTION_CHECK)
+                __PrintCWStateResponse();
 #endif
             AT_ClearResponseSnapshot();
             currentCmdIndex++;
@@ -112,7 +110,8 @@ static COMM_STATE_t __WIFI_SmartConfig(void)
         else
         {
 #if DEBUG_PRINTING
-            __PrintCWStateResponse();
+            if(currentCmdIndex == AT_WIFI_CONNECTION_CHECK)
+                __PrintCWStateResponse();
 #endif
             AT_ClearResponseSnapshot();
             goto STOP_SMART_CONFIG;
@@ -130,7 +129,9 @@ STOP_SMART_CONFIG:
 #if DEBUG_PRINTING
         DBG_log("[WIFI Smart] Stop smart config failed, retrying...\n");
 #endif
+        __AT_UnlockMutex();
         vTaskDelay(pdMS_TO_TICKS(300));
+        __AT_LockMutex();
     }
     __isWifiConnected = false;
     return COMM_STATE_FAILED_TIMER; // Return a failure state to indicate that the smart config process has ended
@@ -227,9 +228,6 @@ static COMM_STATE_t __WIFI_ConnectMqttServer(void)
             vTaskDelay(pdMS_TO_TICKS(300)); // Delay for 300 ms before retrying
         }
     }
-#if DEBUG_PRINTING
-    DBG_log("[WIFI] MQTT Connection done\n");
-#endif
     return COMM_STATE_OK;
 }
 

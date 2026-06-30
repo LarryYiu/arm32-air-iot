@@ -3,12 +3,15 @@
 #include <string.h>
 #include "esp8684_driver.h"
 #include "gd32f30x.h"
+#include "FreeRTOS.h"
+#include "semphr.h"
 
 #define USART1_DATA_ADDR (USART1 + 0x04U) // USART_DATA register address
 #define PACKET_DATA_LEN (1024)
-static char g_rcvDataBuf[PACKET_DATA_LEN];
-static bool g_pktRcvd;
-static uint32_t g_dataLen;
+static char __dataRecvBuffer[PACKET_DATA_LEN];
+static uint32_t __dataLen;
+static SemaphoreHandle_t __dmaSemaphore;
+static SemaphoreHandle_t __uartMutex;
 
 static void __GPIO_Config(void)
 {
@@ -31,7 +34,9 @@ static void __UART_Config(void)
     usart_receive_config(USART1, USART_RECEIVE_ENABLE);
     usart_interrupt_enable(USART1, USART_INT_IDLE);
     usart_dma_receive_config(USART1, USART_RECEIVE_DMA_ENABLE); // enable DMA for USART1 reception
-    nvic_irq_enable(USART1_IRQn, 0, 0);
+    // nvic_irq_enable(USART1_IRQn, 0, 0);
+    nvic_irq_enable(USART1_IRQn, 6,
+                    0); // Set the priority of USART1 interrupt to 6 (for FreeRTOS semaphore in ISR)
     usart_enable(USART1);
 }
 
@@ -52,7 +57,7 @@ static void __DMA_Config(void)
     dmaStruct.periph_width = DMA_PERIPHERAL_WIDTH_8BIT;
 
     /* Destination address */
-    dmaStruct.memory_addr = (uint32_t)g_rcvDataBuf;
+    dmaStruct.memory_addr = (uint32_t)__dataRecvBuffer;
     /* Destination address increment */
     dmaStruct.memory_inc = DMA_MEMORY_INCREASE_ENABLE;
     /* Destination data width */
@@ -84,6 +89,12 @@ void ESP8684_Init(void)
 
     __DMA_Config();
 
+    __dmaSemaphore = xSemaphoreCreateBinary();
+    __uartMutex    = xSemaphoreCreateMutex();
+
+    configASSERT(__dmaSemaphore != NULL);
+    configASSERT(__uartMutex != NULL);
+
     // ESP8684_DisableModule();
     // ESP8684_EnableModule();
 }
@@ -99,12 +110,8 @@ void ESP8684_SendCommand(const char* cmd)
 
 void ESP8684_SnapshotResponse(char* buffer)
 {
-    g_pktRcvd = false;
-    // g_rcvDataBuf[g_dataLen] = '\0';
-    //  printf("Packet len: %d\r\n", g_dataLen);
-    //  printf("%s\r\n", g_rcvDataBuf);
-    memcpy(buffer, g_rcvDataBuf, g_dataLen);
-    memset(g_rcvDataBuf, 0, g_dataLen); // clear the buffer after copying
+    memcpy(buffer, __dataRecvBuffer, __dataLen);
+    memset(__dataRecvBuffer, 0, __dataLen); // clear the buffer after copying
 }
 
 void USART1_IRQHandler(void)
@@ -112,15 +119,25 @@ void USART1_IRQHandler(void)
     if(usart_interrupt_flag_get(USART1, USART_INT_FLAG_IDLE) != RESET)
     {
         usart_data_receive(USART1);
-        g_dataLen = PACKET_DATA_LEN - dma_transfer_number_get(DMA0, DMA_CH5);
-        g_pktRcvd = true;
+        __dataLen = PACKET_DATA_LEN - dma_transfer_number_get(DMA0, DMA_CH5);
+        xSemaphoreGiveFromISR(__dmaSemaphore, NULL);
         dma_channel_disable(DMA0, DMA_CH5);
         dma_transfer_number_config(DMA0, DMA_CH5, PACKET_DATA_LEN);
         dma_channel_enable(DMA0, DMA_CH5);
     }
 }
 
-bool ESP8684_IsPacketReceived(void)
+BaseType_t ESP8684_WaitForPacketSemaphore(void)
 {
-    return g_pktRcvd;
+    return xSemaphoreTake(__dmaSemaphore, 0);
+}
+
+void ESP8684_LockUART(void)
+{
+    xSemaphoreTake(__uartMutex, portMAX_DELAY);
+}
+
+void ESP8684_UnlockUART(void)
+{
+    xSemaphoreGive(__uartMutex);
 }

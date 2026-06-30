@@ -123,12 +123,20 @@ COMM_STATE_t AT_CmdHandler(const char* cmd, const char* desiredResponse, const u
 #if DEBUG_PRINTING
                 DBG_log("[AT] Sending Command: %s\n", cmd);
 #endif
+                ESP8684_LockUART();
                 ESP8684_SendCommand(cmd);
+                ESP8684_UnlockUART();
             }
             while(timeout > 0)
             {
-                if(ESP8684_IsPacketReceived())
+                // #if DEBUG_PRINTING
+                //                 DBG_log("[AT CRITICAL] WAITING ON A PACKET\n");
+                // #endif
+                if(ESP8684_WaitForPacketSemaphore() == pdTRUE)
                 {
+#if DEBUG_PRINTING
+                    DBG_log("[AT CRITICAL] GOT A PACKET\n");
+#endif
                     ESP8684_SnapshotResponse(__atResponseSnapshot);
                     if(__IsAsyncResponse())
                     {
@@ -181,14 +189,16 @@ COMM_STATE_t AT_CmdHandler(const char* cmd, const char* desiredResponse, const u
 #if DEBUG_PRINTING
                             DBG_log("[AT] Sending Command: %s\n", cmd);
 #endif
+                            ESP8684_LockUART();
                             ESP8684_SendCommand(cmd);
+                            ESP8684_UnlockUART();
                         }
                         timeout = *timeoutMs;
                     }
                     else
                     {
 #if DEBUG_PRINTING
-                        DBG_log("[AT] Failed to get expected response\n");
+                        DBG_log("[AT] Failed to get expected response for cmd [%s]\n", cmd ? cmd : "NULL");
 #endif
                         return COMM_STATE_FAILED_RESPONSE;
                     }
