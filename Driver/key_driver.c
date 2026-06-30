@@ -220,7 +220,20 @@ static void __OnReleasedState(Key_t* key)
  */
 static void __OnDebounceState(Key_t* key)
 {
-    vTaskDelay(pdMS_TO_TICKS(KEY_DEBOUNCE_TIME_MS));
+    uint8_t counter = 0;
+    while(counter < KEY_DEBOUNCE_TIME_MS)
+    {
+        if(!__IsNowPressing(key))
+        {
+            counter = 0;
+            continue;
+        }
+        else
+        {
+            vTaskDelay(pdMS_TO_TICKS(1));
+            counter++;
+        }
+    }
     if(__IsNowPressing(key))
     {
         key->isPressing   = true;
@@ -232,6 +245,19 @@ static void __OnDebounceState(Key_t* key)
         key->isPressing   = false;
         key->stateHandler = __OnReleasedState;
     }
+    /*
+    vTaskDelay(pdMS_TO_TICKS(KEY_DEBOUNCE_TIME_MS));
+    if(__IsNowPressing(key))
+    {
+        key->isPressing   = true;
+        key->pressedAt    = xTaskGetTickCount();
+        key->stateHandler = __OnPressedState;
+    }
+    else
+    {
+        key->isPressing   = false;
+        key->stateHandler = __OnReleasedState;
+    } */
 }
 
 /**
