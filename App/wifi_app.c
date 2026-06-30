@@ -13,19 +13,35 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
+#include "semphr.h"
 
 #define DEBUG_PRINTING true
-
-#ifndef WIFI_USE_SMART_CONFIG
-#define WIFI_USE_SMART_CONFIG false
-#endif
 
 // clang-format off
 #define __AT_CWJAP_SSID_PWD_CMD "AT+CWJAP=\"" WIFI_SSID "\",\"" WIFI_PWD "\"\r\n"
 #define __AT_SNTPCFG_CMD "AT+CIPSNTPCFG=1," UTC(8) ",\"" SNTP_SERVER_1 "\",\"" SNTP_SERVER_2 "\"\r\n"
 #define __AT_SUBSCRIBE_CMD "AT+MQTTSUB=0,\"$sys/" MQTT_PRODUCT_ID "/" MQTT_DEVICE_NAME "/thing/property/set\",0\r\n"
 // clang-format on
-#if WIFI_USE_SMART_CONFIG
+
+static bool __isWifiConnected = false;
+
+static SemaphoreHandle_t __smartConfigSemaphore;
+static SemaphoreHandle_t __atMutex;
+
+static __forceinline void __AT_LockMutex(void)
+{
+    xSemaphoreTake(__atMutex, portMAX_DELAY);
+}
+
+static __forceinline void __AT_UnlockMutex(void)
+{
+    xSemaphoreGive(__atMutex);
+}
+
+bool WIFI_IsConnected(void)
+{
+    return __isWifiConnected;
+}
 
 static void __PrintCWStateResponse()
 {
@@ -50,9 +66,7 @@ static void __PrintCWStateResponse()
         }
     }
 }
-#endif
 
-#if WIFI_USE_SMART_CONFIG
 typedef enum
 {
     AT_START_SMART_CONFIG = 0,
@@ -71,7 +85,7 @@ static const AT_Cmd_t __AT_CONFIG_WIFI_CMD[] = {
     [AT_WIFI_CONNECTION_CHECK] = {.cmd = "AT+CWSTATE?\r\n", .desiredResponse = ":2", .timeoutMs = 1000, .maxRetry = 3}};
 
 #define __AT_CONFIG_WIFI_CMD_COUNT (sizeof(__AT_CONFIG_WIFI_CMD) / sizeof(__AT_CONFIG_WIFI_CMD[0]))
-static COMM_STATE_t _WIFI_SmartConfig(void)
+static COMM_STATE_t __WIFI_SmartConfig(void)
 {
     COMM_STATE_t commState;
     uint8_t currentCmdIndex       = 0;
@@ -89,15 +103,23 @@ static COMM_STATE_t _WIFI_SmartConfig(void)
             &__AT_CONFIG_WIFI_CMD[currentCmdIndex].timeoutMs, &__AT_CONFIG_WIFI_CMD[currentCmdIndex].maxRetry);
         if(commState == COMM_STATE_OK || commState == COMM_STATE_DELAY_DONE)
         {
+#if DEBUG_PRINTING
+            __PrintCWStateResponse();
+#endif
             AT_ClearResponseSnapshot();
             currentCmdIndex++;
         }
         else
         {
+#if DEBUG_PRINTING
+            __PrintCWStateResponse();
+#endif
             AT_ClearResponseSnapshot();
             goto STOP_SMART_CONFIG;
         }
     }
+    __isWifiConnected = true;
+    return COMM_STATE_OK;
 
 STOP_SMART_CONFIG:
     while(AT_CmdHandler(__AT_CONFIG_WIFI_CMD[AT_STOP_SMART_CONFIG].cmd,
@@ -110,9 +132,10 @@ STOP_SMART_CONFIG:
 #endif
         vTaskDelay(pdMS_TO_TICKS(300));
     }
+    __isWifiConnected = false;
     return COMM_STATE_FAILED_TIMER; // Return a failure state to indicate that the smart config process has ended
 }
-#else
+
 typedef enum
 {
     AT_CWJAP_SSID_PWD,
@@ -147,13 +170,14 @@ static COMM_STATE_t __WIFI_ConnectInternet(void)
         }
         else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
         {
+            __isWifiConnected = false;
             AT_ClearResponseSnapshot();
             vTaskDelay(pdMS_TO_TICKS(300)); // Delay for 300 ms before retrying
         }
     }
+    __isWifiConnected = true;
     return COMM_STATE_OK;
 }
-#endif
 
 /* OTA Handler Here */
 /* OTA Handler Ends */
@@ -523,6 +547,7 @@ void __WIFI_RTOS_Task(void* arg)
 
     while(1)
     {
+        __AT_LockMutex();
         __WIFI_HandleSubscription();
         currentTime = xTaskGetTickCount();
         if(currentTime - lastSntpUpdateTime >= SNTP_REQ_PERIOD_MS)
@@ -541,12 +566,56 @@ void __WIFI_RTOS_Task(void* arg)
                 lastSensorUploadTime = currentTime;
             }
         }
+        __AT_UnlockMutex();
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+}
+
+void __WIFI_RTOS_SmartConfigTask(void* arg)
+{
+    while(1)
+    {
+        if(xSemaphoreTake(__smartConfigSemaphore, portMAX_DELAY) == pdTRUE)
+        {
+            __AT_LockMutex();
+            COMM_STATE_t commState = __WIFI_SmartConfig();
+            if(commState > COMM_STATE_DELAY_DONE)
+            {
+                DBG_log("[WIFI Smart] Smart Config Process Failed: [%d]\n", commState);
+            }
+            else
+            {
+                DBG_log("[WIFI Smart] Smart Config Process Ended\n");
+                /* done smart config, reconnect the mqtt server */
+                while(__WIFI_ConnectMqttServer() > COMM_STATE_DELAY_DONE)
+                {
+                    DBG_log("[WIFI] MQTT Server Connection Failed, Retrying...\n");
+                    __AT_UnlockMutex(); // release the mutex before delaying to allow other tasks to run
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    __AT_LockMutex(); // re-acquire the mutex after the delay to continue the connection process
+                }
+            }
+            __AT_UnlockMutex();
+        }
+    }
+}
+
+void WIFI_StartSmartConfig(void)
+{
+    if(__smartConfigSemaphore != NULL)
+    {
+        xSemaphoreGive(__smartConfigSemaphore);
     }
 }
 
 void WIFI_RTOS_Init(void)
 {
-    BaseType_t ret = xTaskCreate(__WIFI_RTOS_Task, "wifi", 2048, NULL, tskIDLE_PRIORITY + 2, NULL);
+    __smartConfigSemaphore = xSemaphoreCreateBinary();
+    __atMutex              = xSemaphoreCreateMutex();
+    configASSERT(__smartConfigSemaphore != NULL);
+    configASSERT(__atMutex != NULL);
 
-    configASSERT(ret == pdPASS);
+    BaseType_t rec1 = xTaskCreate(__WIFI_RTOS_Task, "wifi", 256, NULL, 1, NULL);
+    BaseType_t rec2 = xTaskCreate(__WIFI_RTOS_SmartConfigTask, "wifi_smartconfig", 128, NULL, 1, NULL);
+    configASSERT(rec1 == pdPASS && rec2 == pdPASS);
 }

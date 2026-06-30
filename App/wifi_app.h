@@ -11,4 +11,7 @@ void WIFI_RestartSmartConfig(void);
 
 void WIFI_RTOS_Init(void);
 
+bool WIFI_IsConnected(void);
+void WIFI_StartSmartConfig(void);
+
 #endif // __WIFI_APP_H__
