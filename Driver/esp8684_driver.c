@@ -120,16 +120,19 @@ void USART1_IRQHandler(void)
     {
         usart_data_receive(USART1);
         __dataLen = PACKET_DATA_LEN - dma_transfer_number_get(DMA0, DMA_CH5);
-        xSemaphoreGiveFromISR(__dmaSemaphore, NULL);
+        // xSemaphoreGiveFromISR(__dmaSemaphore, NULL);
         dma_channel_disable(DMA0, DMA_CH5);
         dma_transfer_number_config(DMA0, DMA_CH5, PACKET_DATA_LEN);
         dma_channel_enable(DMA0, DMA_CH5);
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        xSemaphoreGiveFromISR(__dmaSemaphore, &xHigherPriorityTaskWoken);
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
 }
 
-BaseType_t ESP8684_WaitForPacketSemaphore(void)
+BaseType_t ESP8684_WaitForPacketSemaphore(uint32_t timeoutMs)
 {
-    return xSemaphoreTake(__dmaSemaphore, 0);
+    return xSemaphoreTake(__dmaSemaphore, pdMS_TO_TICKS(timeoutMs));
 }
 
 void ESP8684_LockUART(void)

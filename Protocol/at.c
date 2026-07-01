@@ -132,7 +132,7 @@ COMM_STATE_t AT_CmdHandler(const char* cmd, const char* desiredResponse, const u
                 // #if DEBUG_PRINTING
                 //                 DBG_log("[AT CRITICAL] WAITING ON A PACKET\n");
                 // #endif
-                if(ESP8684_WaitForPacketSemaphore() == pdTRUE)
+                if(ESP8684_WaitForPacketSemaphore(0) == pdTRUE)
                 {
 #if DEBUG_PRINTING
                     DBG_log("[AT CRITICAL] GOT A PACKET\n");

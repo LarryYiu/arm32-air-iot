@@ -12,7 +12,7 @@ void ESP8684_EnableModule(void);
 
 void ESP8684_DisableModule(void);
 
-BaseType_t ESP8684_WaitForPacketSemaphore(void);
+BaseType_t ESP8684_WaitForPacketSemaphore(uint32_t timeoutMs);
 
 void ESP8684_LockUART(void);
 
