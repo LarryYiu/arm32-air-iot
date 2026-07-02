@@ -13,7 +13,7 @@
 #define MQTT_DEVICE_NAME "GD32Air"
 #define MQTT_PRODUCT_ID "4m3RoDJR8n"
 #define MQTT_DEVICE_TOKEN "version=2018-10-31&res=products%2F4m3RoDJR8n%2Fdevices%2FGD32Air&et=1830268800&method=md5&sign=8k9ydYXFg443djGqlQPzAg%3D%3D"
-
+#define MQTT_DEVICE_TOKEN_SPRINT "version=2018-10-31&res=products%%2F4m3RoDJR8n%%2Fdevices%%2FGD32Air&et=1830268800&method=md5&sign=8k9ydYXFg443djGqlQPzAg%%3D%%3D"
 #define MQTT_CONN_CMD(reconnect) "AT+MQTTCONN=0,\"" MQTT_HOST "\"," MQTT_PORT "," reconnect "\r\n"
 #define MQTT_USERCFG_CMD(keepAlive, qos, retain)  "AT+MQTTUSERCFG=0,"keepAlive",\""MQTT_DEVICE_NAME"\",\""MQTT_PRODUCT_ID"\",\""MQTT_DEVICE_TOKEN"\","qos","retain",\"\"\r\n"
 // clang-format on

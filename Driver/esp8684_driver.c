@@ -90,7 +90,7 @@ void ESP8684_Init(void)
 
 void ESP8684_SendCommand(const char* cmd)
 {
-    for(uint8_t i = 0; cmd[i] != '\0'; i++)
+    for(uint32_t i = 0; cmd[i] != '\0'; i++)
     {
         while(RESET == usart_flag_get(USART1, USART_FLAG_TBE));
         usart_data_transmit(USART1, cmd[i]);

@@ -69,7 +69,6 @@ void APP_Init(void)
     HK_A5_Disable();
 
     KEY_AddShortPressListener(0, ShortPressListener);
-
     DBG_log("APP init done, RTT running...\n");
 }
 
@@ -78,5 +77,5 @@ void APP_Run(void)
     KEY_Scan(0);
     // SHT20_Run();
     // HK_A5_Run();
-    // WIFI_Run();
+    WIFI_Run();
 }

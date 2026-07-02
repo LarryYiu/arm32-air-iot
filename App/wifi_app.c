@@ -11,6 +11,7 @@
 #include "hk_a5_driver.h"
 #include "led_driver.h"
 #include "storage_app.h"
+#include "esp8684_driver.h"
 
 #define DEBUG_PRINTING true
 
@@ -51,7 +52,7 @@ static COMM_STATE_t __WIFI_ConnectInternet(void);
 
 static COMM_STATE_t __WIFI_ConnectMqttServer(void);
 static COMM_STATE_t __WIFI_CommIotServer(void);
-static COMM_STATE_t __WIFI_ConnectOtaServer(void);
+static COMM_STATE_t __WIFI_UploadCurrentVersion(void);
 
 typedef struct WIFI_FSM WIFI_FSM_t;
 struct WIFI_FSM
@@ -72,9 +73,15 @@ static WIFI_FSM_t wifiFsm = {.stateHandler = __WIFI_ConnectInternet};
 #define __AT_CONNECT_OTA_CMD "AT+CIPSTART=\"TCP\",\"" HTTP_HOST "\",80\r\n"
 #define __AT_OTA_CONNECTION_CHECK_CMD "AT+CIPSTATE?\r\n"
 #define __AT_INIT_VERSION_UPLOAD_CMD "AT+CIPSEND=%d\r\n" // %d is the length of the version string
-#define __AT_OTA_VERSION_UPLOAD_CMD \
-    "POST http://" HTTP_HOST "/fuse-ota/" MQTT_PRODUCT_ID "/" MQTT_DEVICE_NAME "/version HTTP/1.1\r\nAuthorization:" MQTT_DEVICE_TOKEN "\r\nContent-Type:application/json\r\nHost:" HTTP_HOST "\r\nContent-Length:%d\r\n\r\n%s"
+#define __AT_OTA_VERSION_UPLOAD_CMD "POST http://" HTTP_HOST "/fuse-ota/" MQTT_PRODUCT_ID "/" MQTT_DEVICE_NAME "/version HTTP/1.1\r\nAuthorization:" MQTT_DEVICE_TOKEN_SPRINT "\r\nContent-Type:application/json\r\nHost:" HTTP_HOST "\r\nContent-Length:%d\r\n\r\n%s"
 #define __IOT_SYS_VERSION_STR        "{\"s_version\":\"%s\", \"f_version\":\"1.0\"}"
+
+#define __AT_HTTP_SET_URL_CMD "AT+HTTPURLCFG=%d\r\n"
+#define __AT_HTTP_URL_UPLOAD_VERSION "http://" HTTP_HOST "/fuse-ota/" MQTT_PRODUCT_ID "/" MQTT_DEVICE_NAME "/version"
+#define __AT_HTTP_SET_HEADER_CMD "AT+HTTPCHEAD=%d\r\n"
+#define __AT_HTTP_HEADER_AUTHORIZATION "Authorization:" MQTT_DEVICE_TOKEN
+#define __AT_HTTP_UPLOAD_VERSION_CMD "AT+HTTPCLIENT=3,1,\"\",1,\"%s\"\r\n"
+
 // clang-format on
 
 #if WIFI_USE_SMART_CONFIG
@@ -307,7 +314,7 @@ static COMM_STATE_t __WIFI_ConnectInternet(void)
 #endif
                 AT_ClearResponseSnapshot();
                 // atCmd = AT_CWJAP_SSID_PWD;
-                wifiFsm.stateHandler = __WIFI_ConnectMqttServer;
+                wifiFsm.stateHandler = __WIFI_UploadCurrentVersion;
                 return COMM_STATE_OK;
             }
             else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
@@ -317,7 +324,7 @@ static COMM_STATE_t __WIFI_ConnectInternet(void)
                 // #endif
                 AT_ClearResponseSnapshot();
                 // atCmd                = AT_CWJAP_SSID_PWD;
-                wifiFsm.stateHandler = __WIFI_ConnectMqttServer;
+                wifiFsm.stateHandler = __WIFI_UploadCurrentVersion;
                 return commState;
             }
             break;
@@ -338,107 +345,431 @@ static COMM_STATE_t __WIFI_ConnectInternet(void)
 6. set the update flag to 1 then reset the system
 */
 
-static char __httpPostBuf[500];
+#define USE_HTTP_CLIENT false
+static char __httpPostBuf[512];
+#if USE_HTTP_CLIENT
 typedef enum
 {
-    AT_OTA_CONNECT_SERVER = 0,
-    AT_OTA_CHECK_CONNECTION,
-    AT_INTIT_VERSION_UPLOAD,
-    AT_UPLOAD_CURR_VERSION,
-
+    AT_HTTP_INIT_URL_CONFIG = 0,
+    AT_HTTP_URL_CONFIG,
+    AT_HTTP_INIT_AUTH_CONFIG,
+    AT_HTTP_AUTH_CONFIG,
+    AT_HTTP_PREPARE_UPLOAD_VERSION_DATA,
+    AT_HTTP_UPLOAD_VERSION,
 } AT_OTA_CONNECT_INDEX_t;
 
-static const AT_Cmd_t __AT_OTA_CONNECT_SERVER_CMD[] = {
-    [AT_OTA_CONNECT_SERVER]   = {.cmd             = __AT_CONNECT_OTA_CMD,
-                                 .desiredResponse = "CONNECT",
-                                 .timeoutMs       = 5000,
-                                 .maxRetry        = 3},
-    [AT_OTA_CHECK_CONNECTION] = {.cmd             = __AT_OTA_CONNECTION_CHECK_CMD,
+static const AT_Cmd_t __AT_UPLOAD_CURRENT_VERSION_CMD[] = {
+    [AT_HTTP_INIT_URL_CONFIG] = {.cmd = __AT_HTTP_SET_URL_CMD, .desiredResponse = ">", .timeoutMs = 500, .maxRetry = 3},
+    [AT_HTTP_URL_CONFIG]      = {.cmd             = __AT_HTTP_URL_UPLOAD_VERSION,
                                  .desiredResponse = "OK",
-                                 .timeoutMs       = 5000,
+                                 .timeoutMs       = 500,
                                  .maxRetry        = 3},
-    [AT_INTIT_VERSION_UPLOAD] = {.cmd             = __AT_INIT_VERSION_UPLOAD_CMD,
-                                 .desiredResponse = ">",
-                                 .timeoutMs       = 5000,
-                                 .maxRetry        = 0},
-    [AT_UPLOAD_CURR_VERSION]  = {.cmd             = __AT_OTA_VERSION_UPLOAD_CMD,
-                                 .desiredResponse = "succ",
-                                 .timeoutMs       = 10000,
-                                 .maxRetry        = 0}};
+    [AT_HTTP_INIT_AUTH_CONFIG]            = {.cmd             = __AT_HTTP_SET_HEADER_CMD,
+                                             .desiredResponse = ">",
+                                             .timeoutMs       = 500,
+                                             .maxRetry        = 3},
+    [AT_HTTP_AUTH_CONFIG]                 = {.cmd             = __AT_HTTP_HEADER_AUTHORIZATION,
+                                             .desiredResponse = "OK",
+                                             .timeoutMs       = 500,
+                                             .maxRetry        = 3},
+    [AT_HTTP_PREPARE_UPLOAD_VERSION_DATA] = {.cmd = NULL, .desiredResponse = "deadbeef", .timeoutMs = 1, .maxRetry = 0},
+    [AT_HTTP_UPLOAD_VERSION]              = {.cmd             = __AT_HTTP_UPLOAD_VERSION_CMD,
+                                             .desiredResponse = "succ",
+                                             .timeoutMs       = 15000,
+                                             .maxRetry        = 3}};
 
-static COMM_STATE_t __WIFI_ConnectOtaServer(void)
+static COMM_STATE_t __WIFI_UploadCurrentVersion(void)
 {
     COMM_STATE_t commState;
-    static AT_OTA_CONNECT_INDEX_t atCmd = AT_OTA_CONNECT_SERVER;
-    char __cmdBuffer[50];
-    uint16_t strLen = 0;
+    static AT_OTA_CONNECT_INDEX_t atCmd = AT_HTTP_INIT_URL_CONFIG;
+    char cmdBuffer[256];
+    char versionStr[50];
+    static uint16_t strLen = 0;
 
     switch(atCmd)
     {
-        case AT_OTA_CONNECT_SERVER:
-            commState = AT_CmdHandler(__AT_OTA_CONNECT_SERVER_CMD + AT_OTA_CONNECT_SERVER);
-            if(commState == COMM_STATE_OK)
-            {
-                AT_ClearResponseSnapshot();
-                atCmd = AT_OTA_CHECK_CONNECTION;
-                return COMM_STATE_OK;
-            }
-            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
-            {
-                AT_ClearResponseSnapshot();
-                return commState;
-            }
-            break;
-        case AT_OTA_CHECK_CONNECTION:
-            commState = AT_CmdHandler(__AT_OTA_CONNECT_SERVER_CMD + AT_OTA_CHECK_CONNECTION);
-            if(commState == COMM_STATE_OK)
-            {
-                AT_ClearResponseSnapshot();
-                char versionStr[50] = {0};
-                STORAGE_GetSysVersion(__cmdBuffer); // borrow the cmdBuffer to store the version string
-                /* "{\"s_version\":\"[real version]\", \"f_version\":\"[does not matter , leave 1.0]\"}" */
-                sprintf(versionStr, __IOT_SYS_VERSION_STR, __cmdBuffer);
-                strLen = strlen(versionStr);
-                memset(__httpPostBuf, 0, sizeof(__httpPostBuf));
-                sprintf(__httpPostBuf, __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].cmd, strLen, versionStr);
-                atCmd = AT_INTIT_VERSION_UPLOAD;
-                return COMM_STATE_OK;
-            }
-            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
-            {
-                AT_ClearResponseSnapshot();
-                atCmd = AT_OTA_CONNECT_SERVER;
-                return commState;
-            }
-            break;
-        case AT_INTIT_VERSION_UPLOAD:
-            sprintf(__cmdBuffer, __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].cmd, strLen);
+        case AT_HTTP_INIT_URL_CONFIG:
+            strLen = strlen(__AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_URL_CONFIG].cmd);
+            sprintf(cmdBuffer, __AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_INIT_URL_CONFIG].cmd, strLen);
             commState =
-                _AT_CmdHandler(__cmdBuffer, __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].desiredResponse,
-                               __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].timeoutMs,
-                               __AT_OTA_CONNECT_SERVER_CMD[AT_INTIT_VERSION_UPLOAD].maxRetry);
+                _AT_CmdHandler(cmdBuffer, __AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_INIT_URL_CONFIG].desiredResponse,
+                               __AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_INIT_URL_CONFIG].timeoutMs,
+                               __AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_INIT_URL_CONFIG].maxRetry);
             if(commState == COMM_STATE_OK)
             {
                 AT_ClearResponseSnapshot();
-                atCmd = AT_UPLOAD_CURR_VERSION;
+                atCmd = AT_HTTP_URL_CONFIG;
                 return COMM_STATE_OK;
             }
             else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
             {
                 AT_ClearResponseSnapshot();
-                atCmd = AT_OTA_CONNECT_SERVER;
                 return commState;
             }
             break;
-        case AT_UPLOAD_CURR_VERSION:
-            // TODO: upload the current version string to the OTA server
+        case AT_HTTP_URL_CONFIG:
+            commState = AT_CmdHandler(__AT_UPLOAD_CURRENT_VERSION_CMD + AT_HTTP_URL_CONFIG);
+            if(commState == COMM_STATE_OK)
+            {
+                AT_ClearResponseSnapshot();
+                atCmd = AT_HTTP_INIT_AUTH_CONFIG;
+                return COMM_STATE_OK;
+            }
+            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                atCmd = AT_HTTP_INIT_URL_CONFIG;
+                return commState;
+            }
+            break;
+        case AT_HTTP_INIT_AUTH_CONFIG:
+            strLen = strlen(__AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_AUTH_CONFIG].cmd);
+            sprintf(cmdBuffer, __AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_INIT_AUTH_CONFIG].cmd, strLen);
+            commState =
+                _AT_CmdHandler(cmdBuffer, __AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_INIT_AUTH_CONFIG].desiredResponse,
+                               __AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_INIT_AUTH_CONFIG].timeoutMs,
+                               __AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_INIT_AUTH_CONFIG].maxRetry);
+            if(commState == COMM_STATE_OK)
+            {
+                AT_ClearResponseSnapshot();
+                atCmd = AT_HTTP_AUTH_CONFIG;
+                return COMM_STATE_OK;
+            }
+            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                return commState;
+            }
+            break;
+        case AT_HTTP_AUTH_CONFIG:
+            commState = AT_CmdHandler(__AT_UPLOAD_CURRENT_VERSION_CMD + AT_HTTP_AUTH_CONFIG);
+            if(commState == COMM_STATE_OK)
+            {
+                AT_ClearResponseSnapshot();
+                atCmd = AT_HTTP_PREPARE_UPLOAD_VERSION_DATA;
+                return COMM_STATE_OK;
+            }
+            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                atCmd = AT_HTTP_INIT_AUTH_CONFIG;
+                return commState;
+            }
+            break;
+        case AT_HTTP_PREPARE_UPLOAD_VERSION_DATA:
+            STORAGE_GetSysVersion(cmdBuffer);
+            sprintf(versionStr, __IOT_SYS_VERSION_STR, cmdBuffer);
+            strLen = strlen(versionStr);
+#if DEBUG_PRINTING
+            DBG_log("[WIFI] Current sys version: %s, len: %d\n", versionStr, strLen);
+#endif
+            memset(__httpPostBuf, 0, sizeof(__httpPostBuf));
+            sprintf(__httpPostBuf, __AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_UPLOAD_VERSION].cmd, versionStr);
+            atCmd = AT_HTTP_UPLOAD_VERSION;
+            break;
+        case AT_HTTP_UPLOAD_VERSION:
+            commState =
+                _AT_CmdHandler(__httpPostBuf, __AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_UPLOAD_VERSION].desiredResponse,
+                               __AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_UPLOAD_VERSION].timeoutMs,
+                               __AT_UPLOAD_CURRENT_VERSION_CMD[AT_HTTP_UPLOAD_VERSION].maxRetry);
+            if(commState == COMM_STATE_OK)
+            {
+                AT_ClearResponseSnapshot();
+                wifiFsm.stateHandler = __WIFI_ConnectMqttServer;
+                return COMM_STATE_OK;
+            }
+            else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                // TODO: do error handling here, maybe hw reset the wifi module and try again
+                return commState;
+            }
             break;
         default:
             break;
     }
     return COMM_STATE_PROCESSING;
 }
+#else
+// typedef enum
+// {
+//     AT_OTA_CONNECT_SERVER = 0,
+//     AT_OTA_CHECK_CONNECTION,
+//     AT_INTIT_VERSION_UPLOAD,
+//     AT_DELAY,
+//     AT_UPLOAD_CURR_VERSION,
 
+// } AT_OTA_CONNECT_INDEX_t;
+
+// static const AT_Cmd_t __AT_UPLOAD_CURRENT_VERSION_CMD[] = {
+//     [AT_OTA_CONNECT_SERVER]   = {.cmd             = __AT_CONNECT_OTA_CMD, //
+//     AT+CIPSTART="TCP","iot-api.heclouds.com",80
+//                                  .desiredResponse = "CONNECT",
+//                                  .timeoutMs       = 5000,
+//                                  .maxRetry        = 3},
+//     [AT_OTA_CHECK_CONNECTION] = {.cmd             = __AT_OTA_CONNECTION_CHECK_CMD,
+//                                  .desiredResponse = "OK",
+//                                  .timeoutMs       = 5000,
+//                                  .maxRetry        = 3},
+//     [AT_INTIT_VERSION_UPLOAD] = {.cmd             = __AT_INIT_VERSION_UPLOAD_CMD,
+//                                  .desiredResponse = ">",
+//                                  .timeoutMs       = 5000,
+//                                  .maxRetry        = 0},
+//     [AT_DELAY]                = {.cmd = NULL, .desiredResponse = "deadbeef", .timeoutMs = 5000, .maxRetry = 0},
+//     [AT_UPLOAD_CURR_VERSION]  = {.cmd             = __AT_OTA_VERSION_UPLOAD_CMD,
+//                                  .desiredResponse = "succ",
+//                                  .timeoutMs       = 10000,
+//                                  .maxRetry        = 0}};
+
+// static COMM_STATE_t __WIFI_UploadCurrentVersion(void)
+// {
+//     COMM_STATE_t commState;
+//     static AT_OTA_CONNECT_INDEX_t atCmd = AT_OTA_CONNECT_SERVER;
+//     char cmdBuffer[50];
+//     static uint16_t strLen = 0;
+
+//     switch(atCmd)
+//     {
+//         case AT_OTA_CONNECT_SERVER:
+//             commState = AT_CmdHandler(__AT_UPLOAD_CURRENT_VERSION_CMD + AT_OTA_CONNECT_SERVER);
+//             if(commState == COMM_STATE_OK)
+//             {
+//                 AT_ClearResponseSnapshot();
+//                 atCmd = AT_OTA_CHECK_CONNECTION;
+//                 return COMM_STATE_OK;
+//             }
+//             else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+//             {
+//                 AT_ClearResponseSnapshot();
+//                 return commState;
+//             }
+//             break;
+//         case AT_OTA_CHECK_CONNECTION:
+//             commState = AT_CmdHandler(__AT_UPLOAD_CURRENT_VERSION_CMD + AT_OTA_CHECK_CONNECTION);
+//             if(commState == COMM_STATE_OK)
+//             {
+//                 AT_ClearResponseSnapshot();
+//                 char versionStr[50] = {0};
+//                 STORAGE_GetSysVersion(cmdBuffer); // borrow the cmdBuffer to store the version string
+//                 /* "{\"s_version\":\"[real version]\", \"f_version\":\"[does not matter , leave 1.0]\"}" */
+//                 sprintf(versionStr, __IOT_SYS_VERSION_STR, cmdBuffer);
+//                 strLen = strlen(versionStr);
+// #if DEBUG_PRINTING
+//                 DBG_log("[WIFI] Current sys version: %s, len: %d\n", versionStr, strLen);
+// #endif
+//                 memset(__httpPostBuf, 0, sizeof(__httpPostBuf));
+//                 sprintf(__httpPostBuf, __AT_UPLOAD_CURRENT_VERSION_CMD[AT_UPLOAD_CURR_VERSION].cmd, strLen,
+//                 versionStr); strLen = strlen(__httpPostBuf); atCmd  = AT_INTIT_VERSION_UPLOAD; return COMM_STATE_OK;
+//             }
+//             else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+//             {
+//                 AT_ClearResponseSnapshot();
+//                 atCmd = AT_OTA_CONNECT_SERVER;
+//                 return commState;
+//             }
+//             break;
+//         case AT_INTIT_VERSION_UPLOAD: // Problem, sent twice
+//             sprintf(cmdBuffer, __AT_UPLOAD_CURRENT_VERSION_CMD[AT_INTIT_VERSION_UPLOAD].cmd, strLen);
+//             commState =
+//                 _AT_CmdHandler(cmdBuffer, __AT_UPLOAD_CURRENT_VERSION_CMD[AT_INTIT_VERSION_UPLOAD].desiredResponse,
+//                                __AT_UPLOAD_CURRENT_VERSION_CMD[AT_INTIT_VERSION_UPLOAD].timeoutMs,
+//                                __AT_UPLOAD_CURRENT_VERSION_CMD[AT_INTIT_VERSION_UPLOAD].maxRetry);
+//             if(commState == COMM_STATE_OK)
+//             {
+//                 AT_ClearResponseSnapshot();
+//                 atCmd = AT_DELAY;
+//                 return COMM_STATE_OK;
+//             }
+//             else if(commState == COMM_STATE_MODULE_BUSY)
+//             {
+//                 // DBG_log("[WIFI TEMP] sent TCP busy\n");
+//                 AT_ClearResponseSnapshot();
+//             }
+//             else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+//             {
+//                 AT_ClearResponseSnapshot();
+//                 return commState;
+//             }
+//             break;
+//         case AT_DELAY:
+//             commState = AT_CmdHandler(__AT_UPLOAD_CURRENT_VERSION_CMD + AT_DELAY);
+//             if(commState == COMM_STATE_OK)
+//             {
+//                 AT_ClearResponseSnapshot();
+//                 atCmd = AT_UPLOAD_CURR_VERSION;
+//                 return COMM_STATE_OK;
+//             }
+//             else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+//             {
+//                 AT_ClearResponseSnapshot();
+//                 atCmd = AT_UPLOAD_CURR_VERSION;
+//                 return commState;
+//             }
+//             break;
+//         case AT_UPLOAD_CURR_VERSION:
+//             commState =
+//                 _AT_CmdHandler(__httpPostBuf,
+//                 __AT_UPLOAD_CURRENT_VERSION_CMD[AT_UPLOAD_CURR_VERSION].desiredResponse,
+//                                __AT_UPLOAD_CURRENT_VERSION_CMD[AT_UPLOAD_CURR_VERSION].timeoutMs,
+//                                __AT_UPLOAD_CURRENT_VERSION_CMD[AT_UPLOAD_CURR_VERSION].maxRetry);
+//             if(commState == COMM_STATE_OK)
+//             {
+//                 AT_ClearResponseSnapshot();
+//                 // TODO: jump to new version checking
+//                 wifiFsm.stateHandler = __WIFI_ConnectMqttServer;
+// #if DEBUG_PRINTING
+//                 DBG_log("[WIFI] OTA Current Version Upload Done\n");
+// #endif
+//                 return COMM_STATE_OK;
+//             }
+//             else if(commState == COMM_STATE_MODULE_BUSY)
+//             {
+//                 AT_ClearResponseSnapshot();
+//                 atCmd = AT_INTIT_VERSION_UPLOAD;
+//             }
+//             else if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+//             {
+//                 AT_ClearResponseSnapshot();
+//                 atCmd = AT_OTA_CONNECT_SERVER;
+//                 return commState;
+//             }
+//             break;
+//         default:
+//             break;
+//     }
+//     return COMM_STATE_PROCESSING;
+// }
+typedef enum
+{
+    AT_CONNECT_OTA_SERVER = 0,
+    AT_CONNECT_SERVER_STATE,
+    AT_REPORT_VER_PREPARE,
+    AT_REPORT_VER_PROCESS,
+} AtConnectServerCmd_t;
+
+static AT_Cmd_t g_connectServerCmd[] = {
+    [AT_CONNECT_OTA_SERVER] =
+        {
+            .cmd             = "AT+CIPSTART=\"TCP\",\"iot-api.heclouds.com\",80\r\n",
+            .desiredResponse = "CONNECT",
+            .timeoutMs       = 5000,
+            .maxRetry        = 3,
+        },
+    [AT_CONNECT_SERVER_STATE] =
+        {
+            .cmd             = "AT+CIPSTATE?\r\n",
+            .desiredResponse = "OK",
+            .timeoutMs       = 5000,
+            .maxRetry        = 3,
+        },
+
+    [AT_REPORT_VER_PREPARE] = {.cmd             = "AT+CIPSEND=%d\r\n", // 第三步，计算下面字符串长度，AT+CIPSEND=333\r\n
+                               .desiredResponse = ">",
+                               .timeoutMs       = 5000,
+                               .maxRetry        = 0},
+    [AT_REPORT_VER_PROCESS] = {.cmd =
+                                   "POST http://iot-api.heclouds.com/fuse-ota/4m3RoDJR8n/GD32Air/version "
+                                   "HTTP/"
+                                   "1.1\r\nAuthorization:version=2018-10-31&res=products%%2F4m3RoDJR8n%%2Fdevices%%"
+                                   "2FGD32Air&et=1830268800&method=md5&sign=8k9ydYXFg443djGqlQPzAg%%3D%%3D\r\nContent-"
+                                   "Type:application/json\r\nHost:iot-api.heclouds.com\r\nContent-Length:%d\r\n\r\n",
+                               .desiredResponse = "succ",
+                               .timeoutMs       = 10000,
+                               .maxRetry        = 0},
+};
+
+static COMM_STATE_t __WIFI_UploadCurrentVersion(void)
+{
+    COMM_STATE_t commState;
+    static AtConnectServerCmd_t s_cmdType = AT_CONNECT_OTA_SERVER;
+    char strBuf[50]                       = {0};
+    uint16_t strLen                       = 0;
+
+    switch(s_cmdType)
+    {
+        case AT_CONNECT_OTA_SERVER:
+            commState = _AT_CmdHandler(g_connectServerCmd[AT_CONNECT_OTA_SERVER].cmd,
+                                       g_connectServerCmd[AT_CONNECT_OTA_SERVER].desiredResponse,
+                                       g_connectServerCmd[AT_CONNECT_OTA_SERVER].timeoutMs,
+                                       g_connectServerCmd[AT_CONNECT_OTA_SERVER].maxRetry);
+            if(commState == COMM_STATE_OK)
+            {
+                AT_ClearResponseSnapshot();
+                s_cmdType = AT_CONNECT_SERVER_STATE;
+            }
+            if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                return commState;
+            }
+            break;
+        case AT_CONNECT_SERVER_STATE:
+            commState = _AT_CmdHandler(g_connectServerCmd[AT_CONNECT_SERVER_STATE].cmd,
+                                       g_connectServerCmd[AT_CONNECT_SERVER_STATE].desiredResponse,
+                                       g_connectServerCmd[AT_CONNECT_SERVER_STATE].timeoutMs,
+                                       g_connectServerCmd[AT_CONNECT_SERVER_STATE].maxRetry);
+            if(commState == COMM_STATE_OK)
+            {
+                AT_ClearResponseSnapshot();
+                s_cmdType = AT_REPORT_VER_PREPARE;
+
+                char verBuf[50] = {0};
+                STORAGE_GetSysVersion(strBuf);                  // "1.0"
+                sprintf(verBuf, __IOT_SYS_VERSION_STR, strBuf); // "{\"s_version\":\"%s\", \"f_version\":\"1.0\"}"
+                // sprintf(verBuf, __IOT_SYS_VERSION_STR, "1.0");   // "{\"s_version\":\"1.0\", \"f_version\":\"1.0\"}"
+                strLen = strlen(verBuf); // 38
+                memset(__httpPostBuf, 0, sizeof(__httpPostBuf));
+                sprintf(__httpPostBuf, g_connectServerCmd[AT_REPORT_VER_PROCESS].cmd, strLen, verBuf); // 格式化POST包
+            }
+            if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                s_cmdType = AT_CONNECT_OTA_SERVER;
+                return commState;
+            }
+            break;
+        case AT_REPORT_VER_PREPARE:
+            sprintf(strBuf, g_connectServerCmd[AT_REPORT_VER_PREPARE].cmd,
+                    strlen(__httpPostBuf)); // "AT+CIPSEND=333\r\n",
+            commState = _AT_CmdHandler(strBuf, g_connectServerCmd[AT_REPORT_VER_PREPARE].desiredResponse,
+                                       g_connectServerCmd[AT_REPORT_VER_PREPARE].timeoutMs,
+                                       g_connectServerCmd[AT_REPORT_VER_PREPARE].maxRetry);
+            if(commState == COMM_STATE_OK)
+            {
+                AT_ClearResponseSnapshot();
+                s_cmdType = AT_REPORT_VER_PROCESS;
+            }
+            if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                s_cmdType = AT_CONNECT_OTA_SERVER;
+                return commState;
+            }
+            break;
+        case AT_REPORT_VER_PROCESS:
+            commState = _AT_CmdHandler(__httpPostBuf, g_connectServerCmd[AT_REPORT_VER_PROCESS].desiredResponse,
+                                       g_connectServerCmd[AT_REPORT_VER_PROCESS].timeoutMs,
+                                       g_connectServerCmd[AT_REPORT_VER_PROCESS].maxRetry);
+            if(commState == COMM_STATE_OK)
+            {
+                AT_ClearResponseSnapshot();
+                s_cmdType            = AT_CONNECT_OTA_SERVER;
+                wifiFsm.stateHandler = __WIFI_ConnectMqttServer;
+                return COMM_STATE_OK;
+            }
+            if(commState == COMM_STATE_FAILED_TIMER || commState == COMM_STATE_FAILED_RESPONSE)
+            {
+                AT_ClearResponseSnapshot();
+                s_cmdType = AT_CONNECT_OTA_SERVER;
+                return commState;
+            }
+            break;
+        default:
+            break;
+    }
+    return COMM_STATE_PROCESSING;
+}
+#endif
 /* OTA Handler Ends */
 
 typedef enum
